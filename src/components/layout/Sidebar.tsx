@@ -23,18 +23,12 @@ const navItems: NavItem[] = [
   { label: 'Câu lạc bộ', to: '/clubs', icon: <Building2 size={18} /> },
   { label: 'Lịch hoạt động', to: '/events', icon: <Calendar size={18} /> },
   { label: 'Báo cáo', to: '/reports', icon: <ClipboardList size={18} />, roles: ['ClubManager', 'Admin', 'Advisor'] },
-  { label: 'Ngân sách', to: '/finance', icon: <DollarSign size={18} />, roles: ['ClubManager', 'Admin', 'Advisor'] },
-  { label: 'Bảng xếp hạng KPI', to: '/kpi', icon: <Trophy size={18} /> },
   { label: 'Thông báo', to: '/notifications', icon: <Bell size={18} /> },
 ];
 
 const adminItems: NavItem[] = [
   { label: 'Quản lý CLB', to: '/admin/clubs', icon: <Building2 size={18} /> },
   { label: 'Duyệt báo cáo', to: '/admin/reports', icon: <ClipboardList size={18} /> },
-  { label: 'Duyệt ngân sách', to: '/admin/finance', icon: <DollarSign size={18} /> },
-  { label: 'Cấu hình KPI', to: '/admin/kpi-rules', icon: <Star size={18} /> },
-  { label: 'Quản lý người dùng', to: '/admin/users', icon: <Users size={18} /> },
-  { label: 'Thông báo hệ thống', to: '/admin/broadcast', icon: <Megaphone size={18} /> },
 ];
 
 export function Sidebar() {
