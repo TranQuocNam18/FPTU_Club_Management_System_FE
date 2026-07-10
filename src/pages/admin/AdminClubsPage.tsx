@@ -37,14 +37,14 @@ export default function AdminClubsPage() {
   });
 
   const { register, handleSubmit, reset, setValue } = useForm<{
-    name: string; description: string; category: string; logoUrl: string; establishedDate: string; status: ClubStatus;
+    name: string; description: string; logoUrl: string; status: ClubStatus;
   }>();
 
   const createMutation = useMutation({
     mutationFn: (d: any) => clubApi.create({
       name: d.name,
       description: d.description,
-      logoUrl: d.logoUrl || null,
+      logoUrl: d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null,
       advisorId: user?.id || "22222222-2222-2222-2222-222222222222"
     } as any),
     onSuccess: () => { toast.success('Tạo CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
@@ -52,11 +52,30 @@ export default function AdminClubsPage() {
   });
 
   const updateMutation = useMutation({
-    mutationFn: (d: any) => clubApi.update(editTarget!.id, {
-      name: d.name,
-      description: d.description,
-      logoUrl: d.logoUrl || null
-    } as any),
+    mutationFn: async (d: any) => {
+      const logo = d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null;
+      await clubApi.update(editTarget!.id, {
+        name: d.name,
+        description: d.description,
+        logoUrl: logo
+      } as any);
+
+      const statusEnumMap: Record<string, number> = {
+        'Pending': 0,
+        'Active': 1,
+        'Suspended': 2,
+        'Inactive': 3,
+        '0': 0,
+        '1': 1,
+        '2': 2,
+        '3': 3
+      };
+      const newStatusVal = statusEnumMap[d.status];
+      const oldStatusVal = statusEnumMap[getStatusLabel(editTarget!.status)];
+      if (newStatusVal !== undefined && newStatusVal !== oldStatusVal) {
+        await clubApi.review(editTarget!.id, newStatusVal);
+      }
+    },
     onSuccess: () => { toast.success('Cập nhật CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setEditTarget(null); reset(); },
     onError: () => toast.error('Không thể cập nhật CLB'),
   });
@@ -65,9 +84,8 @@ export default function AdminClubsPage() {
     setEditTarget(club);
     setValue('name', club.name);
     setValue('description', club.description);
-    setValue('category', club.category);
-    setValue('logoUrl', club.logoUrl);
-    setValue('status', club.status);
+    setValue('logoUrl', club.logoUrl || '');
+    setValue('status', getStatusLabel(club.status) as any);
   };
 
   const statusMap: Record<number | string, string> = {
@@ -182,24 +200,12 @@ export default function AdminClubsPage() {
             <input {...register('name', { required: true })} className="input-field" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Danh mục</label>
-            <select {...register('category', { required: true })} className="input-field">
-              {['Kỹ thuật', 'Văn hóa', 'Thể thao', 'Học thuật', 'Nghệ thuật', 'Công nghệ', 'Tình nguyện'].map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả</label>
             <textarea {...register('description')} rows={3} className="input-field resize-none" />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">URL Logo</label>
             <input {...register('logoUrl')} className="input-field" placeholder="https://..." />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Ngày thành lập</label>
-            <input {...register('establishedDate')} type="date" className="input-field" />
           </div>
           {editTarget && (
             <div>

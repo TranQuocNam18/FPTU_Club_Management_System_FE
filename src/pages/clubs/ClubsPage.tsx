@@ -19,9 +19,7 @@ import type { Club } from '../../types';
 const createSchema = z.object({
   name: z.string().min(3),
   description: z.string().min(10),
-  category: z.string().min(2),
   logoUrl: z.string().url().optional().or(z.literal('')),
-  establishedDate: z.string(),
 });
 type CreateForm = z.infer<typeof createSchema>;
 
@@ -45,18 +43,18 @@ export default function ClubsPage() {
     mutationFn: (d: CreateForm) => clubApi.create({
       name: d.name,
       description: d.description,
-      logoUrl: d.logoUrl || null,
+      logoUrl: d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null,
       advisorId: user?.id || "22222222-2222-2222-2222-222222222222"
     } as any),
     onSuccess: () => { toast.success('Tạo CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
     onError: () => toast.error('Không thể tạo CLB'),
   });
 
-  const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<CreateForm>({ resolver: zodResolver(createSchema) });
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<CreateForm>({ resolver: zodResolver(createSchema) });
 
   const filtered = clubs.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.category.toLowerCase().includes(search.toLowerCase())
+    c.description.toLowerCase().includes(search.toLowerCase())
   );
 
   if (isLoading) return <PageSpinner />;
@@ -146,16 +144,6 @@ export default function ClubsPage() {
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Danh mục</label>
-            <select {...register('category')} className="input-field">
-              <option value="">Chọn danh mục</option>
-              {['Kỹ thuật', 'Văn hóa', 'Thể thao', 'Học thuật', 'Nghệ thuật', 'Công nghệ', 'Tình nguyện'].map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            {errors.category && <p className="text-red-500 text-xs mt-1">{errors.category.message}</p>}
-          </div>
-          <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả</label>
             <textarea {...register('description')} rows={3} className="input-field resize-none" placeholder="Mô tả hoạt động của CLB..." />
             {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description.message}</p>}
@@ -164,13 +152,9 @@ export default function ClubsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">URL Logo (tuỳ chọn)</label>
             <input {...register('logoUrl')} className="input-field" placeholder="https://..." />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Ngày thành lập</label>
-            <input {...register('establishedDate')} type="date" className="input-field" />
-          </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="outline" type="button" onClick={() => { setShowCreate(false); reset(); }}>Hủy</Button>
-            <Button type="submit" loading={isSubmitting || createMutation.isPending}>Tạo CLB</Button>
+            <Button type="submit" loading={createMutation.isPending}>Tạo CLB</Button>
           </div>
         </form>
       </Modal>

@@ -63,14 +63,26 @@ export default function ClubDetailPage() {
 
   const isManagerOrAdmin = user?.role === 'Admin' || user?.role === 'Advisor' || user?.role === 'ClubManager';
 
-  const { register, handleSubmit, reset } = useForm<{
+  const { register, handleSubmit, reset, formState: { errors } } = useForm<{
     title: string; description: string; startTime: string; endTime: string; location: string;
   }>();
 
   const createEventMutation = useMutation({
     mutationFn: (d: any) => eventApi.create({ ...d, clubId: id! }),
     onSuccess: () => { toast.success('Tạo sự kiện thành công!'); qc.invalidateQueries({ queryKey: ['club-events', id] }); setShowCreateEvent(false); reset(); },
-    onError: () => toast.error('Không thể tạo sự kiện'),
+    onError: (error: any) => {
+      const serverError = error.response?.data;
+      let errorMsg = 'Không thể tạo sự kiện';
+      if (serverError?.errors) {
+        errorMsg = Object.entries(serverError.errors)
+          .map(([field, msgs]: any) => `${field}: ${msgs.join(', ')}`)
+          .join('; ');
+      } else if (serverError?.message || serverError?.Message) {
+        errorMsg = serverError.message || serverError.Message;
+      }
+      toast.error(errorMsg);
+      console.error('Event creation validation failed:', serverError);
+    },
   });
 
   if (isLoading) return <PageSpinner />;
@@ -273,26 +285,62 @@ export default function ClubDetailPage() {
       <Modal isOpen={showCreateEvent} onClose={() => { setShowCreateEvent(false); reset(); }} title="Tạo sự kiện mới">
         <form onSubmit={handleSubmit(d => createEventMutation.mutate(d))} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Tên sự kiện</label>
-            <input {...register('title', { required: true })} className="input-field" placeholder="Tên sự kiện" />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Tên sự kiện * <span className="text-xs text-slate-400 font-normal">(3 - 200 ký tự)</span></label>
+            <input
+              {...register('title', {
+                required: 'Vui lòng nhập tên sự kiện',
+                minLength: { value: 3, message: 'Tên sự kiện phải từ 3 đến 200 ký tự' },
+                maxLength: { value: 200, message: 'Tên sự kiện phải từ 3 đến 200 ký tự' }
+              })}
+              className="input-field"
+              placeholder="VD: Hội nghị CLB..."
+            />
+            {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title.message}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả</label>
-            <textarea {...register('description')} rows={3} className="input-field resize-none" placeholder="Mô tả chi tiết..." />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả * <span className="text-xs text-slate-400 font-normal">(tối đa 1000 ký tự)</span></label>
+            <textarea
+              {...register('description', {
+                required: 'Vui lòng nhập mô tả sự kiện',
+                maxLength: { value: 1000, message: 'Mô tả không được vượt quá 1000 ký tự' }
+              })}
+              rows={3}
+              className="input-field resize-none"
+              placeholder="Mô tả chi tiết nội dung sự kiện..."
+            />
+            {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description.message}</p>}
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Bắt đầu</label>
-              <input {...register('startTime', { required: true })} type="datetime-local" className="input-field" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Bắt đầu *</label>
+              <input
+                {...register('startTime', { required: 'Vui lòng chọn ngày bắt đầu' })}
+                type="datetime-local"
+                className="input-field"
+              />
+              {errors.startTime && <p className="text-red-500 text-xs mt-1">{errors.startTime.message}</p>}
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Kết thúc</label>
-              <input {...register('endTime', { required: true })} type="datetime-local" className="input-field" />
+              <label className="block text-sm font-medium text-slate-700 mb-1">Kết thúc *</label>
+              <input
+                {...register('endTime', { required: 'Vui lòng chọn ngày kết thúc' })}
+                type="datetime-local"
+                className="input-field"
+              />
+              {errors.endTime && <p className="text-red-500 text-xs mt-1">{errors.endTime.message}</p>}
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Địa điểm</label>
-            <input {...register('location', { required: true })} className="input-field" placeholder="Phòng học, hội trường..." />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Địa điểm * <span className="text-xs text-slate-400 font-normal">(tối đa 250 ký tự)</span></label>
+            <input
+              {...register('location', {
+                required: 'Vui lòng nhập địa điểm',
+                maxLength: { value: 250, message: 'Địa điểm không được vượt quá 250 ký tự' }
+              })}
+              className="input-field"
+              placeholder="Phòng học, hội trường..."
+            />
+            {errors.location && <p className="text-red-500 text-xs mt-1">{errors.location.message}</p>}
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="outline" type="button" onClick={() => { setShowCreateEvent(false); reset(); }}>Hủy</Button>

@@ -33,14 +33,6 @@ function AdminDashboard() {
   const activeClubs = clubs.filter(c => (c.status as any) === 1 || (c.status as any) === '1' || (c.status as any) === 'Active').length;
   const pendingClubs = clubs.filter(c => (c.status as any) === 0 || (c.status as any) === '0' || (c.status as any) === 'Pending').length;
 
-  // Calculate Category Data dynamically
-  const categoryCounts = clubs.reduce((acc: Record<string, number>, c: any) => {
-    const cat = c.category || 'Khác';
-    acc[cat] = (acc[cat] || 0) + 1;
-    return acc;
-  }, {});
-  const categoryData = Object.entries(categoryCounts).map(([name, value]) => ({ name, value }));
-
   // Calculate Status Data dynamically
   const statusCounts = clubs.reduce((acc: Record<string, number>, c: any) => {
     const statusMap: Record<any, string> = {
@@ -70,48 +62,24 @@ function AdminDashboard() {
       </div>
 
       {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Category Chart */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-base font-semibold text-slate-800 mb-4">CLB theo danh mục</h3>
-          {categoryData.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 text-sm">Không có dữ liệu</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={categoryData} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
-                  dataKey="value" paddingAngle={3}>
-                  {categoryData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '12px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Status Chart */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-base font-semibold text-slate-800 mb-4">Trạng thái hoạt động CLB</h3>
-          {statusData.length === 0 ? (
-            <div className="text-center py-16 text-slate-400 text-sm">Không có dữ liệu</div>
-          ) : (
-            <ResponsiveContainer width="100%" height={240}>
-              <PieChart>
-                <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
-                  dataKey="value" paddingAngle={3}>
-                  {statusData.map((_, i) => (
-                    <Cell key={i} fill={COLORS[(i + 2) % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '12px' }} />
-              </PieChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
+        <h3 className="text-base font-semibold text-slate-800 mb-4">Trạng thái hoạt động CLB</h3>
+        {statusData.length === 0 ? (
+          <div className="text-center py-16 text-slate-400 text-sm">Không có dữ liệu</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={240}>
+            <PieChart>
+              <Pie data={statusData} cx="50%" cy="50%" innerRadius={55} outerRadius={80}
+                dataKey="value" paddingAngle={3}>
+                {statusData.map((_, i) => (
+                  <Cell key={i} fill={COLORS[(i + 2) % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip contentStyle={{ borderRadius: '12px', border: 'none' }} />
+              <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '12px' }} />
+            </PieChart>
+          </ResponsiveContainer>
+        )}
       </div>
 
       {/* Recent Pending Reports */}

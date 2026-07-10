@@ -16,16 +16,19 @@ export const eventApi = {
 
   create: (data: CreateEventRequest) => {
     const payload = {
-      ...data,
-      expectedDate: (data as any).startTime || new Date().toISOString(),
+      ClubId: data.clubId,
+      Title: data.title,
+      Description: data.description || "Không có mô tả",
+      ExpectedDate: data.startTime || new Date().toISOString(),
+      Location: data.location
     };
     return api.post<ApiResponse<any>>('/gateway/events', payload).then(res => {
       if (res.data && res.data.data) {
         const e = res.data.data;
         res.data.data = {
           ...e,
-          startTime: e.expectedDate || e.ExpectedDate || payload.expectedDate,
-          endTime: e.expectedDate || e.ExpectedDate || payload.expectedDate,
+          startTime: e.expectedDate || e.ExpectedDate || payload.ExpectedDate,
+          endTime: e.expectedDate || e.ExpectedDate || payload.ExpectedDate,
         };
       }
       return res as any;
@@ -34,16 +37,18 @@ export const eventApi = {
 
   update: (id: string, data: Partial<CreateEventRequest>) => {
     const payload = {
-      ...data,
-      expectedDate: (data as any).startTime,
+      Title: data.title,
+      Description: data.description || "Không có mô tả",
+      ExpectedDate: data.startTime,
+      Location: data.location
     };
     return api.put<ApiResponse<any>>(`/gateway/events/${id}`, payload).then(res => {
       if (res.data && res.data.data) {
         const e = res.data.data;
         res.data.data = {
           ...e,
-          startTime: e.expectedDate || e.ExpectedDate || payload.expectedDate,
-          endTime: e.expectedDate || e.ExpectedDate || payload.expectedDate,
+          startTime: e.expectedDate || e.ExpectedDate || payload.ExpectedDate,
+          endTime: e.expectedDate || e.ExpectedDate || payload.ExpectedDate,
         };
       }
       return res as any;
