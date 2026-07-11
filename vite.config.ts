@@ -16,5 +16,24 @@ export default defineConfig({
   server: {
     port: 5173,
     open: true,
+    proxy: {
+      '/gateway/events': {
+        target: 'http://localhost:5002',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/gateway\/events/, '/api/v1/events'),
+      },
+      '/gateway/notifications': {
+        target: 'http://localhost:5004',
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/gateway\/notifications/, '/api/v1/notifications'),
+      },
+      '/gateway': {
+        target: 'http://localhost:5000',
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 })

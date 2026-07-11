@@ -1,13 +1,10 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard, Users, BookOpen, DollarSign, Trophy,
-  Bell, Settings, LogOut, ChevronRight, Shield, Calendar,
-  ClipboardList, Building2, Megaphone, Star
+  LayoutDashboard, Shield, Calendar, ClipboardList, Building2, ChevronRight, Bell, LogOut
 } from 'lucide-react';
 import { useAuthStore } from '../../stores/authStore';
 import { cn, getRoleLabel } from '../../utils';
-
 import { useQuery } from '@tanstack/react-query';
 import { notificationApi } from '../../api/notification.api';
 
@@ -42,7 +39,8 @@ export function Sidebar() {
     enabled: !!user,
   });
 
-  const unreadCount = notifRes?.data?.data?.filter((n: any) => !n.isRead).length ?? 0;
+  const notifications = notifRes?.data?.data ?? [];
+  const unreadCount = notifications.filter((n: any) => !n.isRead).length;
 
   const handleLogout = () => {
     logout();
@@ -74,7 +72,7 @@ export function Sidebar() {
           <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
             {user?.fullName?.charAt(0) ?? 'U'}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="text-white text-sm font-medium truncate">{user?.fullName ?? 'User'}</p>
             <p className="text-slate-400 text-xs">{getRoleLabel(user?.role ?? '')}</p>
           </div>
@@ -97,7 +95,7 @@ export function Sidebar() {
             {item.icon}
             <span className="flex-1">{item.label}</span>
             {item.to === '/notifications' && unreadCount > 0 && (
-              <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full animate-bounce">
+              <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
                 {unreadCount}
               </span>
             )}

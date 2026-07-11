@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppLayout, AuthLayout } from './components/layout/Layout';
 import LoginPage from './pages/auth/LoginPage';
@@ -10,6 +10,7 @@ import EventsPage from './pages/events/EventsPage';
 import ReportsPage from './pages/reports/ReportsPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import AdminClubsPage from './pages/admin/AdminClubsPage';
+import { useAuthStore } from './stores/authStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,6 +21,13 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Guard Route for Admin/Advisor only
+function AdminGuard() {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
+  return isAdmin ? <Outlet /> : <Navigate to="/dashboard" replace />;
+}
 
 function App() {
   return (
@@ -41,9 +49,11 @@ function App() {
             <Route path="/reports" element={<ReportsPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
 
-            {/* Admin routes */}
-            <Route path="/admin/clubs" element={<AdminClubsPage />} />
-            <Route path="/admin/reports" element={<ReportsPage />} />
+            {/* Admin routes protected by AdminGuard */}
+            <Route element={<AdminGuard />}>
+              <Route path="/admin/clubs" element={<AdminClubsPage />} />
+              <Route path="/admin/reports" element={<ReportsPage />} />
+            </Route>
           </Route>
 
           {/* Default redirect */}
