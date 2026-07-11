@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppLayout, AuthLayout } from './components/layout/Layout';
 import LoginPage from './pages/auth/LoginPage';
@@ -8,12 +8,9 @@ import ClubsPage from './pages/clubs/ClubsPage';
 import ClubDetailPage from './pages/clubs/ClubDetailPage';
 import EventsPage from './pages/events/EventsPage';
 import ReportsPage from './pages/reports/ReportsPage';
-import FinancePage from './pages/finance/FinancePage';
-import KPIPage from './pages/kpi/KPIPage';
 import NotificationsPage from './pages/notifications/NotificationsPage';
 import AdminClubsPage from './pages/admin/AdminClubsPage';
-import AdminUsersPage from './pages/admin/AdminUsersPage';
-import AdminBroadcastPage from './pages/admin/AdminBroadcastPage';
+import { useAuthStore } from './stores/authStore';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -24,6 +21,13 @@ const queryClient = new QueryClient({
     },
   },
 });
+
+// Guard Route for Admin/Advisor only
+function AdminGuard() {
+  const { user } = useAuthStore();
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
+  return isAdmin ? <Outlet /> : <Navigate to="/dashboard" replace />;
+}
 
 function App() {
   return (
@@ -43,17 +47,13 @@ function App() {
             <Route path="/clubs/:id" element={<ClubDetailPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/finance" element={<FinancePage />} />
-            <Route path="/kpi" element={<KPIPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
 
-            {/* Admin routes */}
-            <Route path="/admin/clubs" element={<AdminClubsPage />} />
-            <Route path="/admin/reports" element={<ReportsPage />} />
-            <Route path="/admin/finance" element={<FinancePage />} />
-            <Route path="/admin/kpi-rules" element={<KPIPage />} />
-            <Route path="/admin/users" element={<AdminUsersPage />} />
-            <Route path="/admin/broadcast" element={<AdminBroadcastPage />} />
+            {/* Admin routes protected by AdminGuard */}
+            <Route element={<AdminGuard />}>
+              <Route path="/admin/clubs" element={<AdminClubsPage />} />
+              <Route path="/admin/reports" element={<ReportsPage />} />
+            </Route>
           </Route>
 
           {/* Default redirect */}

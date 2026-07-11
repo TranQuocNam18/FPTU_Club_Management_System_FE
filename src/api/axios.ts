@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const BASE_URL = 'http://localhost:5000';
+const BASE_URL = '';
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -22,7 +22,10 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    const isAuthPath = originalRequest?.url?.includes('/gateway/auth/login') || originalRequest?.url?.includes('/gateway/auth/register');
+    const hasBusinessPermissionError = error.response?.data?.message && !error.response?.data?.message.includes('not authenticated');
+    
+    if (error.response?.status === 401 && !originalRequest._retry && !isAuthPath && !hasBusinessPermissionError) {
       originalRequest._retry = true;
       try {
         const refreshToken = localStorage.getItem('refreshToken');
