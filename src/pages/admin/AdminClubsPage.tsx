@@ -5,14 +5,12 @@ import toast from 'react-hot-toast';
 import { clubApi } from '../../api/club.api';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { PageSpinner, EmptyState } from '../../components/ui/Spinner';
+import { PageSpinner, EmptyState, Skeleton } from '../../components/ui/Spinner';
 import { Modal } from '../../components/ui/Modal';
 import { getStatusColor, formatDate } from '../../utils';
 import { useForm } from 'react-hook-form';
-import type { Club } from '../../types';
+import type { Club, ClubStatus } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
-import { ClubStatusMap, ClubStatusLabel } from '../../types';
-import { Navigate } from 'react-router-dom';
 
 export default function AdminClubsPage() {
   const { user } = useAuthStore();
@@ -20,89 +18,146 @@ export default function AdminClubsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<Club | null>(null);
 
-  // Route Guard: Only Admin & Advisor are allowed
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
-  if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   const { data: res, isLoading } = useQuery({ queryKey: ['clubs'], queryFn: () => clubApi.getAll() });
   const clubs: Club[] = res?.data?.data ?? [];
 
   const deleteMutation = useMutation({
-    id: 'delete-club',
     mutationFn: (id: string) => clubApi.delete(id),
-    onSuccess: () => { toast.success('Đã tạm ngưng/xóa CLB'); qc.invalidateQueries({ queryKey: ['clubs'] }); },
-    onError: () => toast.error('Không thể thực hiện'),
-  } as any);
+    onSuccess: () => { toast.success('Da tam ngung CLB'); qc.invalidateQueries({ queryKey: ['clubs'] }); },
+    onError: () => toast.error('Khong the thuc hien'),
+  });
 
   const reviewMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: number }) => clubApi.review(id, status),
     onSuccess: (_, variables) => {
-      toast.success(variables.status === 1 ? 'Phê duyệt CLB thành công!' : 'Thay đổi trạng thái CLB thành công.');
+      toast.success(variables.status === 1 ? 'Phe duyet CLB thanh cong!' : 'Da tu choi don thanh lap CLB.');
       qc.invalidateQueries({ queryKey: ['clubs'] });
     },
-    onError: () => toast.error('Có lỗi xảy ra khi duyệt CLB'),
+    onError: () => toast.error('Co loi xay ra khi duyet CLB'),
   });
 
   const { register, handleSubmit, reset, setValue } = useForm<{
-    name: string; description: string; logoUrl: string; status: string;
+    name: string; description: string; category: string; logoUrl: string; establishedDate: string; status: ClubStatus;
   }>();
 
   const createMutation = useMutation({
     mutationFn: (d: any) => clubApi.create({
       name: d.name,
       description: d.description,
-      logoUrl: d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null,
+      logoUrl: d.logoUrl || null,
+      category: d.category,
+      establishedDate: d.establishedDate,
       advisorId: user?.id || "22222222-2222-2222-2222-222222222222"
-    }),
-    onSuccess: () => { toast.success('Tạo CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
-    onError: () => toast.error('Không thể tạo CLB'),
+    } as any),
+    onSuccess: () => { toast.success('Tao CLB thanh cong!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
+    onError: () => toast.error('Khong the tao CLB'),
   });
 
   const updateMutation = useMutation({
-    mutationFn: async (d: any) => {
-      const logo = d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null;
-      await clubApi.update(editTarget!.id, {
-        name: d.name,
-        description: d.description,
-        logoUrl: logo
-      });
-
-      // Update status if changed via review endpoint
-      const newStatusVal = parseInt(d.status);
-      const oldStatusVal = typeof editTarget!.status === 'number' ? editTarget!.status : 0;
-      if (newStatusVal !== oldStatusVal) {
-        await clubApi.review(editTarget!.id, newStatusVal);
-      }
-    },
-    onSuccess: () => { toast.success('Cập nhật CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setEditTarget(null); reset(); },
-    onError: () => toast.error('Không thể cập nhật CLB'),
+    mutationFn: (d: any) => clubApi.update(editTarget!.id, {
+      name: d.name,
+      description: d.description,
+      logoUrl: d.logoUrl || null,
+      category: d.category,
+      establishedDate: d.establishedDate,
+      status: d.status,
+    } as any),
+    onSuccess: () => { toast.success('Cap nhat CLB thanh cong!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setEditTarget(null); reset(); },
+    onError: () => toast.error('Khong the cap nhat CLB'),
   });
 
   const openEdit = (club: Club) => {
     setEditTarget(club);
     setValue('name', club.name);
     setValue('description', club.description);
-    setValue('logoUrl', club.logoUrl || '');
-    setValue('status', String(club.status));
+    setValue('category', club.category ?? 'Khac');
+    setValue('logoUrl', club.logoUrl ?? '');
+    setValue('status', club.status as ClubStatus);
   };
 
-  if (isLoading) return <PageSpinner />;
+  const handleSuspend = (club: Club) => {
+    const confirmed = window.confirm(`Tam ngung CLB "${club.name}"? Hanh dong nay se an CLB khoi cac luong hoat dong.`);
+    if (confirmed) deleteMutation.mutate(club.id);
+  };
+
+  const statusMap: Record<number | string, string> = {
+    0: 'Pending',
+    1: 'Active',
+    2: 'Suspended',
+    3: 'Inactive',
+    'PendingApproval': 'Pending',
+    'Active': 'Active',
+    'Suspended': 'Suspended',
+    'Inactive': 'Inactive'
+  };
+
+  const getStatusLabel = (status: any) => {
+    return statusMap[status] ?? 'Pending';
+  };
+
+  if (isLoading) {
+    return (
+      <div>
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <Skeleton className="h-8 w-48" />
+            <Skeleton className="h-4 w-32 mt-2" />
+          </div>
+          <Skeleton className="h-10 w-32" />
+        </div>
+
+        {/* Table Skeleton */}
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="p-4 space-y-4">
+            {[1, 2, 3, 4].map(n => (
+              <div key={n} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                <div className="flex items-center gap-3">
+                  <Skeleton className="w-10 h-10 rounded-xl" />
+                  <div className="space-y-1.5">
+                    <Skeleton className="h-4 w-36" />
+                    <Skeleton className="h-3 w-56" />
+                  </div>
+                </div>
+                <Skeleton className="h-5 w-24" />
+                <Skeleton className="h-5 w-20" />
+                <Skeleton className="h-6 w-16" />
+                <div className="flex items-center gap-2">
+                  <Skeleton className="h-8 w-8 rounded-lg" />
+                  <Skeleton className="h-8 w-8 rounded-lg" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Quản lý Câu lạc bộ</h1>
-          <p className="text-slate-500 text-sm mt-1">{clubs.length} CLB trong hệ thống</p>
+          <h1 className="text-2xl font-bold text-slate-800">Quan ly Cau lac bo</h1>
+          <p className="text-slate-500 text-sm mt-1">{clubs.length} CLB trong he thong</p>
         </div>
-        <Button icon={<Plus size={16} />} onClick={() => setShowCreate(true)}>Tạo CLB mới</Button>
+        <Button
+          icon={<Plus size={16} />}
+          onClick={() => setShowCreate(true)}
+        >
+          Tao CLB moi
+        </Button>
       </div>
 
       {clubs.length === 0 ? (
-        <EmptyState icon={<Building2 size={48} />} title="Chưa có CLB nào"
-          action={<Button icon={<Plus size={16} />} onClick={() => setShowCreate(true)}>Tạo CLB đầu tiên</Button>} />
+        <EmptyState icon={<Building2 size={48} />} title="Chua co CLB nao"
+          action={
+            <Button
+              icon={<Plus size={16} />}
+              onClick={() => setShowCreate(true)}
+            >
+              Tao CLB dau tien
+            </Button>
+          } />
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
           <div className="overflow-x-auto">
@@ -110,14 +165,16 @@ export default function AdminClubsPage() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">CLB</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Trạng thái</th>
-                  <th className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Thao tác</th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Danh muc</th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Thanh lap</th>
+                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Trang thai</th>
+                  <th className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Thao tac</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {clubs.map(club => {
-                  const statusName = ClubStatusMap[club.status] ?? String(club.status);
-                  const isPending = club.status === 0 || club.status === 'PendingApproval';
+                  const mappedStatus = getStatusLabel(club.status);
+                  const isPending = (club.status as any) === 0 || (club.status as any) === '0' || (club.status as any) === 'PendingApproval';
                   return (
                     <tr key={club.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
@@ -127,12 +184,14 @@ export default function AdminClubsPage() {
                           </div>
                           <div>
                             <p className="text-sm font-semibold text-slate-800">{club.name}</p>
-                            <p className="text-xs text-slate-400 line-clamp-1 max-w-lg">{club.description}</p>
+                            <p className="text-xs text-slate-400 line-clamp-1 max-w-48">{club.description}</p>
                           </div>
                         </div>
                       </td>
+                      <td className="px-6 py-4 text-sm text-slate-600">{club.category ?? 'Chua phan loai'}</td>
+                      <td className="px-6 py-4 text-sm text-slate-500">{club.establishedDate ? formatDate(club.establishedDate) : 'Chua co'}</td>
                       <td className="px-6 py-4">
-                        <Badge className={getStatusColor(statusName)}>{statusName}</Badge>
+                        <Badge className={getStatusColor(mappedStatus)}>{mappedStatus}</Badge>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
@@ -141,20 +200,25 @@ export default function AdminClubsPage() {
                               <button onClick={() => reviewMutation.mutate({ id: club.id, status: 1 })}
                                 disabled={reviewMutation.isPending}
                                 className="text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                                Duyệt
+                                Duyet
                               </button>
                               <button onClick={() => reviewMutation.mutate({ id: club.id, status: 3 })}
                                 disabled={reviewMutation.isPending}
                                 className="text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                                Từ chối
+                                Tu choi
                               </button>
                             </>
                           )}
-                          <button onClick={() => openEdit(club)}
+                          <button
+                            onClick={() => openEdit(club)}
+                            aria-label={`Chinh sua ${club.name}`}
                             className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all">
                             <Edit2 size={15} />
                           </button>
-                          <button onClick={() => deleteMutation.mutate(club.id)}
+                          <button
+                            onClick={() => handleSuspend(club)}
+                            disabled={deleteMutation.isPending}
+                            aria-label={`Tam ngung ${club.name}`}
                             className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
                             <Trash2 size={15} />
                           </button>
@@ -173,36 +237,47 @@ export default function AdminClubsPage() {
       <Modal
         isOpen={showCreate || !!editTarget}
         onClose={() => { setShowCreate(false); setEditTarget(null); reset(); }}
-        title={editTarget ? 'Chỉnh sửa CLB' : 'Tạo CLB mới'}
+        title={editTarget ? 'Chinh sua CLB' : 'Tao CLB moi'}
       >
         <form onSubmit={handleSubmit(d => editTarget ? updateMutation.mutate(d) : createMutation.mutate(d))} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Tên CLB</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Ten CLB</label>
             <input {...register('name', { required: true })} className="input-field" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Danh muc</label>
+            <select {...register('category', { required: true })} className="input-field">
+              {['Ky thuat', 'Van hoa', 'The thao', 'Hoc thuat', 'Nghe thuat', 'Cong nghe', 'Tinh nguyen'].map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Mo ta</label>
             <textarea {...register('description')} rows={3} className="input-field resize-none" />
           </div>
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">URL Logo</label>
             <input {...register('logoUrl')} className="input-field" placeholder="https://..." />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Ngay thanh lap</label>
+            <input {...register('establishedDate')} type="date" className="input-field" />
+          </div>
           {editTarget && (
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Trạng thái</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Trang thai</label>
               <select {...register('status')} className="input-field">
-                <option value="0">Chờ duyệt (PendingApproval)</option>
-                <option value="1">Hoạt động (Active)</option>
-                <option value="2">Tạm dừng (Suspended)</option>
-                <option value="3">Giải thể (Inactive)</option>
+                <option value="Active">Active</option>
+                <option value="Suspended">Suspended</option>
+                <option value="Inactive">Inactive</option>
               </select>
             </div>
           )}
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); setEditTarget(null); reset(); }}>Hủy</Button>
+            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); setEditTarget(null); reset(); }}>Huy</Button>
             <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
-              {editTarget ? 'Cập nhật' : 'Tạo CLB'}
+              {editTarget ? 'Cap nhat' : 'Tao CLB'}
             </Button>
           </div>
         </form>

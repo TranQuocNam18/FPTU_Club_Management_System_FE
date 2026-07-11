@@ -1,66 +1,84 @@
-import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { lazy, Suspense } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppLayout, AuthLayout } from './components/layout/Layout';
-import LoginPage from './pages/auth/LoginPage';
-import RegisterPage from './pages/auth/RegisterPage';
-import DashboardPage from './pages/dashboard/DashboardPage';
-import ClubsPage from './pages/clubs/ClubsPage';
-import ClubDetailPage from './pages/clubs/ClubDetailPage';
-import EventsPage from './pages/events/EventsPage';
-import ReportsPage from './pages/reports/ReportsPage';
-import NotificationsPage from './pages/notifications/NotificationsPage';
-import AdminClubsPage from './pages/admin/AdminClubsPage';
-import { useAuthStore } from './stores/authStore';
+import { RequireRole } from './components/auth/RequireRole';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import { PageSpinner } from './components/ui/Spinner';
+
+// Lazy load pages for optimized bundle sizing
+const AuthPage = lazy(() => import('./pages/auth/AuthPage'));
+const VerifyEmailPage = lazy(() => import('./pages/auth/VerifyEmailPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/auth/ForgotPasswordPage'));
+const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'));
+const ClubsPage = lazy(() => import('./pages/clubs/ClubsPage'));
+const ClubDetailPage = lazy(() => import('./pages/clubs/ClubDetailPage'));
+const EventsPage = lazy(() => import('./pages/events/EventsPage'));
+const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
+const FinancePage = lazy(() => import('./pages/finance/FinancePage'));
+const KPIPage = lazy(() => import('./pages/kpi/KPIPage'));
+const NotificationsPage = lazy(() => import('./pages/notifications/NotificationsPage'));
+const AdminClubsPage = lazy(() => import('./pages/admin/AdminClubsPage'));
+const AdminUsersPage = lazy(() => import('./pages/admin/AdminUsersPage'));
+const AdminBroadcastPage = lazy(() => import('./pages/admin/AdminBroadcastPage'));
+const NotFoundPage = lazy(() => import('./pages/error/NotFoundPage'));
 
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      staleTime: 30000,
+      staleTime: 300000, // 5 minutes staleTime for standard performance pattern
       refetchOnWindowFocus: false,
     },
   },
 });
 
-// Guard Route for Admin/Advisor only
-function AdminGuard() {
-  const { user } = useAuthStore();
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
-  return isAdmin ? <Outlet /> : <Navigate to="/dashboard" replace />;
-}
-
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
-          <Route element={<AuthLayout />}>
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-          </Route>
+      <ErrorBoundary>
+        <Suspense fallback={<PageSpinner />}>
+          <BrowserRouter>
+            <Routes>
+              {/* Public routes */}
+              <Route element={<AuthLayout />}>
+                <Route path="/login" element={<AuthPage mode="login" />} />
+                <Route path="/register" element={<AuthPage mode="register" />} />
+                <Route path="/verify-email" element={<VerifyEmailPage />} />
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              </Route>
 
-          {/* Protected routes */}
-          <Route element={<AppLayout />}>
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/clubs" element={<ClubsPage />} />
-            <Route path="/clubs/:id" element={<ClubDetailPage />} />
-            <Route path="/events" element={<EventsPage />} />
-            <Route path="/reports" element={<ReportsPage />} />
-            <Route path="/notifications" element={<NotificationsPage />} />
+              {/* Protected routes */}
+              <Route element={<AppLayout />}>
+                <Route path="/dashboard" element={<DashboardPage />} />
+                <Route path="/clubs" element={<ClubsPage />} />
+                <Route path="/clubs/:id" element={<ClubDetailPage />} />
+                <Route path="/events" element={<EventsPage />} />
+                <Route path="/kpi" element={<KPIPage />} />
+                <Route path="/notifications" element={<NotificationsPage />} />
 
-            {/* Admin routes protected by AdminGuard */}
-            <Route element={<AdminGuard />}>
-              <Route path="/admin/clubs" element={<AdminClubsPage />} />
-              <Route path="/admin/reports" element={<ReportsPage />} />
-            </Route>
-          </Route>
+                <Route element={<RequireRole allowedRoles={['ClubManager', 'Admin', 'Advisor']} />}>
+                  <Route path="/reports" element={<ReportsPage />} />
+                  <Route path="/finance" element={<FinancePage />} />
+                </Route>
 
-          {/* Default redirect */}
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
-      </BrowserRouter>
+                <Route element={<RequireRole allowedRoles={['Admin', 'Advisor']} />}>
+                  <Route path="/admin/clubs" element={<AdminClubsPage />} />
+                  <Route path="/admin/reports" element={<ReportsPage />} />
+                  <Route path="/admin/finance" element={<FinancePage />} />
+                  <Route path="/admin/kpi-rules" element={<KPIPage />} />
+                  <Route path="/admin/users" element={<AdminUsersPage />} />
+                  <Route path="/admin/broadcast" element={<AdminBroadcastPage />} />
+                </Route>
+              </Route>
+
+              {/* Default redirect */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<NotFoundPage />} />
+            </Routes>
+          </BrowserRouter>
+        </Suspense>
+      </ErrorBoundary>
     </QueryClientProvider>
   );
 }

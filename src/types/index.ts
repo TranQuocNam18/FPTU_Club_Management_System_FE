@@ -5,6 +5,7 @@ export interface User {
   fullName: string;
   role: 'Admin' | 'Advisor' | 'ClubManager' | 'Student';
   isActive: boolean;
+  isEmailVerified?: boolean;
 }
 
 export interface LoginRequest {
@@ -15,8 +16,29 @@ export interface LoginRequest {
 export interface RegisterRequest {
   email: string;
   password: string;
+  confirmPassword: string;
   fullName: string;
   role: string;
+}
+
+export interface VerifyEmailRequest {
+  email: string;
+  code: string;
+}
+
+export interface ResendVerificationEmailRequest {
+  email: string;
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  email: string;
+  resetCode: string;
+  newPassword: string;
+  confirmNewPassword: string;
 }
 
 export interface LoginResponse {
@@ -35,6 +57,7 @@ export interface ApiResponse<T> {
 // ==================== CLUB ====================
 // ClubStatus enum: PendingApproval=0, Active=1, Suspended=2, Inactive=3
 export type ClubStatusEnum = 0 | 1 | 2 | 3;
+export type ClubStatus = ClubStatusEnum | 'Pending' | 'PendingApproval' | 'Active' | 'Suspended' | 'Inactive' | string;
 export const ClubStatusMap: Record<number | string, string> = {
   0: 'PendingApproval',
   1: 'Active',
@@ -64,7 +87,7 @@ export interface Club {
   advisorId?: string;
   isActive?: boolean;
   // BE trả về status là số (0,1,2,3) hoặc string
-  status: ClubStatusEnum | string;
+  status: ClubStatus;
   // Các field optional vì BE ClubDto không có nhưng có thể được bổ sung
   category?: string;
   establishedDate?: string;
@@ -121,10 +144,12 @@ export interface ClubMember {
   clubId: string;
   userId: string;
   // BE returns numeric enum: 0=Member, 1=Manager, 2=President
-  role: ClubRoleEnum | number;
+  role?: ClubRoleEnum | number;
   // BE returns numeric enum: 0=Pending, 1=Approved, 2=Rejected, 3=Left
-  status: MembershipStatusEnum | number;
-  joinedAt: string;
+  status: MembershipStatusEnum | number | string;
+  joinedAt?: string;
+  joinDate?: string;
+  roleInClub?: string;
   isActive?: boolean;
   // May be populated via JOIN in some implementations
   fullName?: string;
@@ -170,7 +195,9 @@ export interface ClubEvent {
   title: string;
   description: string;
   // BE uses ExpectedDate (single datetime), not startTime/endTime
-  expectedDate: string;
+  expectedDate?: string;
+  startTime: string;
+  endTime: string;
   location: string;
   status: EventStatusEnum | string | number;
   isActive?: boolean;
@@ -212,14 +239,20 @@ export interface ActivityReport {
   title: string;
   content: string;
   // BE returns string enum name: "Financial", "Activity", "General"
-  type: string | number;
+  type?: string | number;
+  reportType?: string;
   // BE returns string enum name: "Pending", "Approved", "Rejected"
   status: string | number;
+  reporterId?: string;
+  reporterName?: string;
   createdBy?: string;
   reviewedBy?: string;
   reviewNote?: string;
-  createdAt: string;
+  feedback?: string;
+  kpiPoints?: number;
+  createdAt?: string;
   updatedAt?: string;
+  submissionDate?: string;
   attachments?: Array<{ id: string; url: string; fileName: string }>;
 }
 
@@ -252,4 +285,56 @@ export interface Notification {
   isRead: boolean;
   referenceId?: string;
   createdAt: string;
+}
+
+// ==================== FINANCE ====================
+export interface BudgetProposal {
+  id: string;
+  clubId: string;
+  clubName?: string;
+  proposerId?: string;
+  eventName: string;
+  requestedAmount: number;
+  approvedAmount?: number;
+  proposedDate: string;
+  status: 'Draft' | 'Pending' | 'Approved' | 'PartiallyApproved' | 'Rejected' | 'Settled' | string;
+  budgetDetailsJson?: string;
+  feedback?: string;
+}
+
+export interface CreateProposalRequest {
+  clubId: string;
+  eventName: string;
+  requestedAmount: number;
+  budgetDetailsJson?: string;
+}
+
+export interface Transaction {
+  id: string;
+  clubId: string;
+  amount: number;
+  type: 'Income' | 'Expense' | string;
+  description: string;
+  transactionDate: string;
+  referenceId?: string;
+  receiptUrl?: string;
+}
+
+// ==================== KPI ====================
+export interface KPILeaderboardEntry {
+  rank: number;
+  clubId: string;
+  clubName: string;
+  logoUrl?: string | null;
+  totalPoints: number;
+  approvedReports: number;
+  semester: string;
+}
+
+export interface KPIRule {
+  id: string;
+  name: string;
+  description: string;
+  maxPoints: number;
+  weight: number;
 }

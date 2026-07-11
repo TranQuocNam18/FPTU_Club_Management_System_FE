@@ -1,12 +1,14 @@
 import { HubConnection, HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
+import { API_BASE_URL } from '../api/axios';
 
 let connection: HubConnection | null = null;
+const SIGNALR_URL = import.meta.env.VITE_SIGNALR_URL ?? `${API_BASE_URL}/gateway/hubs/notification`;
 
 export const getSignalRConnection = (token: string): HubConnection => {
   if (connection) return connection;
 
   connection = new HubConnectionBuilder()
-    .withUrl('http://localhost:5004/hubs/notification', {
+    .withUrl(SIGNALR_URL, {
       accessTokenFactory: () => token,
     })
     .withAutomaticReconnect()

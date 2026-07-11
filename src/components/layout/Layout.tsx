@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { Sidebar } from './Sidebar';
+import { Header } from './Header';
 import { useAuthStore } from '../../stores/authStore';
 import { Toaster } from 'react-hot-toast';
 import { useQueryClient } from '@tanstack/react-query';
@@ -10,10 +11,19 @@ import toast from 'react-hot-toast';
 export function AppLayout() {
   const { isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
+  const [collapsed, setCollapsed] = useState(window.innerWidth < 768);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setCollapsed(window.innerWidth < 768);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (!isAuthenticated) return;
-    const token = localStorage.getItem('accessToken');
+    const token = useAuthStore.getState().accessToken;
     if (token) {
       startSignalR(token).then(() => {
         const conn = getSignalRConnection(token);
@@ -23,7 +33,7 @@ export function AppLayout() {
               <span className="font-bold text-sm text-slate-800">{notification.title || notification.Title}</span>
               <span className="text-xs text-slate-500">{notification.message || notification.Message}</span>
             </div>
-          ), { icon: '🔔', duration: 5000 });
+          ), { icon: 'Bell', duration: 5000 });
           qc.invalidateQueries({ queryKey: ['notifications'] });
         });
       });
@@ -40,12 +50,15 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
-      <Sidebar />
-      <main className="flex-1 overflow-y-auto min-w-0">
-        <div className="min-h-full p-6 animate-fadeIn">
-          <Outlet />
-        </div>
-      </main>
+      <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <Header collapsed={collapsed} setCollapsed={setCollapsed} />
+        <main className="flex-1 overflow-y-auto min-w-0">
+          <div className="min-h-full p-6 animate-fadeIn">
+            <Outlet />
+          </div>
+        </main>
+      </div>
       <Toaster
         position="top-right"
         toastOptions={{

@@ -19,7 +19,7 @@ export function PageSpinner() {
     <div className="flex items-center justify-center h-64">
       <div className="flex flex-col items-center gap-3">
         <Loader2 size={40} className="animate-spin text-indigo-500" />
-        <p className="text-sm text-slate-500">Đang tải dữ liệu...</p>
+        <p className="text-sm text-slate-500">Dang tai du lieu...</p>
       </div>
     </div>
   );
@@ -40,5 +40,15 @@ export function EmptyState({ icon, title, description, action }: EmptyStateProps
       {description && <p className="text-sm text-slate-400 max-w-xs">{description}</p>}
       {action && <div className="mt-3">{action}</div>}
     </div>
+  );
+}
+
+interface SkeletonProps {
+  className?: string;
+}
+
+export function Skeleton({ className }: SkeletonProps) {
+  return (
+    <div className={`animate-pulse bg-slate-200/80 rounded-xl ${className ?? ''}`} />
   );
 }
