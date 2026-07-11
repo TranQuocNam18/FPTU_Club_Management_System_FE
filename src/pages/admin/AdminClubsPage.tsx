@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Building2, Edit2, Trash2, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Plus, Building2, Edit2, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clubApi } from '../../api/club.api';
 import { Badge } from '../../components/ui/Badge';
@@ -9,8 +9,10 @@ import { PageSpinner, EmptyState } from '../../components/ui/Spinner';
 import { Modal } from '../../components/ui/Modal';
 import { getStatusColor, formatDate } from '../../utils';
 import { useForm } from 'react-hook-form';
-import type { Club, ClubStatus } from '../../types';
+import type { Club } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
+import { ClubStatusMap, ClubStatusLabel } from '../../types';
+import { Navigate } from 'react-router-dom';
 
 export default function AdminClubsPage() {
   const { user } = useAuthStore();
@@ -18,45 +20,62 @@ export default function AdminClubsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [editTarget, setEditTarget] = useState<Club | null>(null);
 
+  // Route Guard: Only Admin & Advisor are allowed
+  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
+  if (!isAdmin) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   const { data: res, isLoading } = useQuery({ queryKey: ['clubs'], queryFn: () => clubApi.getAll() });
   const clubs: Club[] = res?.data?.data ?? [];
 
   const deleteMutation = useMutation({
+    id: 'delete-club',
     mutationFn: (id: string) => clubApi.delete(id),
-    onSuccess: () => { toast.success('Đã tạm ngưng CLB'); qc.invalidateQueries({ queryKey: ['clubs'] }); },
+    onSuccess: () => { toast.success('Đã tạm ngưng/xóa CLB'); qc.invalidateQueries({ queryKey: ['clubs'] }); },
     onError: () => toast.error('Không thể thực hiện'),
-  });
+  } as any);
 
   const reviewMutation = useMutation({
     mutationFn: ({ id, status }: { id: string; status: number }) => clubApi.review(id, status),
     onSuccess: (_, variables) => {
-      toast.success(variables.status === 1 ? 'Phê duyệt CLB thành công!' : 'Đã từ chối đơn thành lập CLB.');
+      toast.success(variables.status === 1 ? 'Phê duyệt CLB thành công!' : 'Thay đổi trạng thái CLB thành công.');
       qc.invalidateQueries({ queryKey: ['clubs'] });
     },
     onError: () => toast.error('Có lỗi xảy ra khi duyệt CLB'),
   });
 
   const { register, handleSubmit, reset, setValue } = useForm<{
-    name: string; description: string; category: string; logoUrl: string; establishedDate: string; status: ClubStatus;
+    name: string; description: string; logoUrl: string; status: string;
   }>();
 
   const createMutation = useMutation({
     mutationFn: (d: any) => clubApi.create({
       name: d.name,
       description: d.description,
-      logoUrl: d.logoUrl || null,
+      logoUrl: d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null,
       advisorId: user?.id || "22222222-2222-2222-2222-222222222222"
-    } as any),
+    }),
     onSuccess: () => { toast.success('Tạo CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
     onError: () => toast.error('Không thể tạo CLB'),
   });
 
   const updateMutation = useMutation({
-    mutationFn: (d: any) => clubApi.update(editTarget!.id, {
-      name: d.name,
-      description: d.description,
-      logoUrl: d.logoUrl || null
-    } as any),
+    mutationFn: async (d: any) => {
+      const logo = d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null;
+      await clubApi.update(editTarget!.id, {
+        name: d.name,
+        description: d.description,
+        logoUrl: logo
+      });
+
+      // Update status if changed via review endpoint
+      const newStatusVal = parseInt(d.status);
+      const oldStatusVal = typeof editTarget!.status === 'number' ? editTarget!.status : 0;
+      if (newStatusVal !== oldStatusVal) {
+        await clubApi.review(editTarget!.id, newStatusVal);
+      }
+    },
     onSuccess: () => { toast.success('Cập nhật CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setEditTarget(null); reset(); },
     onError: () => toast.error('Không thể cập nhật CLB'),
   });
@@ -65,24 +84,8 @@ export default function AdminClubsPage() {
     setEditTarget(club);
     setValue('name', club.name);
     setValue('description', club.description);
-    setValue('category', club.category);
-    setValue('logoUrl', club.logoUrl);
-    setValue('status', club.status);
-  };
-
-  const statusMap: Record<number | string, string> = {
-    0: 'Pending',
-    1: 'Active',
-    2: 'Suspended',
-    3: 'Inactive',
-    'PendingApproval': 'Pending',
-    'Active': 'Active',
-    'Suspended': 'Suspended',
-    'Inactive': 'Inactive'
-  };
-
-  const getStatusLabel = (status: any) => {
-    return statusMap[status] ?? 'Pending';
+    setValue('logoUrl', club.logoUrl || '');
+    setValue('status', String(club.status));
   };
 
   if (isLoading) return <PageSpinner />;
@@ -107,16 +110,14 @@ export default function AdminClubsPage() {
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">CLB</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Danh mục</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Thành lập</th>
                   <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Trạng thái</th>
                   <th className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Thao tác</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {clubs.map(club => {
-                  const mappedStatus = getStatusLabel(club.status);
-                  const isPending = (club.status as any) === 0 || (club.status as any) === '0' || (club.status as any) === 'PendingApproval';
+                  const statusName = ClubStatusMap[club.status] ?? String(club.status);
+                  const isPending = club.status === 0 || club.status === 'PendingApproval';
                   return (
                     <tr key={club.id} className="hover:bg-slate-50 transition-colors">
                       <td className="px-6 py-4">
@@ -126,14 +127,12 @@ export default function AdminClubsPage() {
                           </div>
                           <div>
                             <p className="text-sm font-semibold text-slate-800">{club.name}</p>
-                            <p className="text-xs text-slate-400 line-clamp-1 max-w-48">{club.description}</p>
+                            <p className="text-xs text-slate-400 line-clamp-1 max-w-lg">{club.description}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-slate-600">{club.category}</td>
-                      <td className="px-6 py-4 text-sm text-slate-500">{formatDate(club.establishedDate)}</td>
                       <td className="px-6 py-4">
-                        <Badge className={getStatusColor(mappedStatus)}>{mappedStatus}</Badge>
+                        <Badge className={getStatusColor(statusName)}>{statusName}</Badge>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-2">
@@ -182,14 +181,6 @@ export default function AdminClubsPage() {
             <input {...register('name', { required: true })} className="input-field" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Danh mục</label>
-            <select {...register('category', { required: true })} className="input-field">
-              {['Kỹ thuật', 'Văn hóa', 'Thể thao', 'Học thuật', 'Nghệ thuật', 'Công nghệ', 'Tình nguyện'].map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả</label>
             <textarea {...register('description')} rows={3} className="input-field resize-none" />
           </div>
@@ -197,17 +188,14 @@ export default function AdminClubsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1">URL Logo</label>
             <input {...register('logoUrl')} className="input-field" placeholder="https://..." />
           </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Ngày thành lập</label>
-            <input {...register('establishedDate')} type="date" className="input-field" />
-          </div>
           {editTarget && (
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Trạng thái</label>
               <select {...register('status')} className="input-field">
-                <option value="Active">Active</option>
-                <option value="Suspended">Suspended</option>
-                <option value="Inactive">Inactive</option>
+                <option value="0">Chờ duyệt (PendingApproval)</option>
+                <option value="1">Hoạt động (Active)</option>
+                <option value="2">Tạm dừng (Suspended)</option>
+                <option value="3">Giải thể (Inactive)</option>
               </select>
             </div>
           )}
