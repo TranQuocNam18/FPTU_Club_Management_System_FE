@@ -3,7 +3,7 @@ export function getApiErrorMessage(err: any, fallback: string) {
 
   if (!data) {
     if (err?.code === 'ECONNABORTED') return 'Ket noi API qua lau. Hay kiem tra gateway local port 5000.';
-    if (err?.message === 'Network Error') return 'Khong ket noi duoc API gateway local http://localhost:5000.';
+    if (err?.message === 'Network Error') return 'Cannot connect to the local API gateway at http://localhost:5000.';
     return fallback;
   }
 
@@ -11,7 +11,12 @@ export function getApiErrorMessage(err: any, fallback: string) {
   if (typeof data.message === 'string' && data.message) return data.message;
   if (typeof data.title === 'string' && data.title) return data.title;
   if (typeof data.detail === 'string' && data.detail) return data.detail;
-  if (Array.isArray(data.errors)) return data.errors.join('\n');
+  if (Array.isArray(data.errors)) {
+    return data.errors
+      .map((error: any) => typeof error === 'string' ? error : error?.message)
+      .filter(Boolean)
+      .join('\n') || fallback;
+  }
   if (data.errors && typeof data.errors === 'object') {
     return Object.values(data.errors).flat().join('\n');
   }

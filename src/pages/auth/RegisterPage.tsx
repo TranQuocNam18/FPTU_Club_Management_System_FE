@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Shield, Eye, EyeOff, UserPlus, User, Mail, ShieldAlert, Lock } from 'lucide-react';
+import { Shield, Eye, EyeOff, User, Mail, ShieldAlert, Lock, CheckCircle2, Send } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authApi } from '../../api/auth.api';
 import { Button } from '../../components/ui/Button';
@@ -34,6 +34,10 @@ function getApiErrorMessage(err: any, fallback: string) {
 export default function RegisterPage() {
   const navigate = useNavigate();
   const [showPass, setShowPass] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -49,10 +53,45 @@ export default function RegisterPage() {
         fullName: data.fullName,
         role: data.role,
       });
-      toast.success(res.data.message || 'Verification email has been sent.');
-      navigate('/verify-email', { state: { email: data.email.trim().toLowerCase() } });
+      const email = data.email.trim().toLowerCase();
+      setVerificationEmail(email);
+      toast.success(res.data.message || 'Ma xac minh da duoc gui den email.');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Dang ky that bai'));
+    }
+  };
+
+  const handleVerify = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const code = verificationCode.trim();
+    if (!code) {
+      toast.error('Vui long nhap ma xac minh');
+      return;
+    }
+
+    try {
+      setIsVerifying(true);
+      const res = await authApi.verifyEmail({ email: verificationEmail, code });
+      toast.success(res.data.message || 'Xac thuc tai khoan thanh cong.');
+      navigate('/login');
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Ma xac minh khong dung hoac da het han'));
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!verificationEmail) return;
+
+    try {
+      setIsResending(true);
+      const res = await authApi.resendVerificationEmail({ email: verificationEmail });
+      toast.success(res.data.message || 'Da gui lai ma xac minh.');
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Khong gui lai duoc ma xac minh'));
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -68,11 +107,74 @@ export default function RegisterPage() {
           <div className="w-20 h-20 mx-auto rounded-3xl bg-gradient-to-br from-cyan-400 via-cyan-500 to-cyan-700 flex items-center justify-center shadow-[0_12px_40px_-12px_rgba(6,182,212,0.5)] mb-4 animate-pulse-ring">
             <Shield size={36} className="text-white" />
           </div>
-          <h1 className="text-3xl font-extrabold text-white tracking-tight">Tao tai khoan moi</h1>
+          <h1 className="text-3xl font-extrabold text-white tracking-tight">
+            {verificationEmail ? 'Xac thuc email' : 'Tao tai khoan moi'}
+          </h1>
           <p className="text-slate-400 text-sm mt-1.5">FPTU Club Report System</p>
         </div>
 
         <div className="glass-card rounded-3xl p-8 animate-fadeIn">
+          {verificationEmail ? (
+          <form onSubmit={handleVerify} className="flex flex-col gap-4">
+            <div className="auth-input-group">
+              <label className="auth-label text-slate-400">Email</label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <Mail size={18} />
+                </div>
+                <input
+                  value={verificationEmail}
+                  readOnly
+                  className="auth-input"
+                />
+              </div>
+            </div>
+
+            <div className="auth-input-group">
+              <label className="auth-label text-slate-400">Ma xac minh</label>
+              <div className="relative">
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400">
+                  <Shield size={18} />
+                </div>
+                <input
+                  value={verificationCode}
+                  onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="Nhap ma 6 so"
+                  className="auth-input"
+                  style={{ paddingRight: '6rem' }}
+                />
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={isResending}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 border-l border-slate-700 pl-3 text-sm font-semibold text-cyan-400 transition-colors hover:text-cyan-300 disabled:cursor-not-allowed disabled:text-slate-500"
+                >
+                  {isResending ? 'Dang gui' : 'Gui lai'}
+                </button>
+              </div>
+            </div>
+
+            <Button
+              type="submit"
+              loading={isVerifying}
+              icon={<CheckCircle2 size={16} />}
+              className="w-full py-3.5 mt-2 font-semibold bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 border-none text-white shadow-lg shadow-cyan-500/20"
+              size="lg"
+            >
+              Xac thuc tai khoan
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => setVerificationEmail('')}
+              className="text-center text-sm font-semibold text-slate-400 transition-colors hover:text-cyan-300"
+            >
+              Doi thong tin dang ky
+            </button>
+          </form>
+          ) : (
           <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
             <div className="auth-input-group">
               <label className="auth-label text-slate-400">Ho va ten</label>
@@ -164,13 +266,14 @@ export default function RegisterPage() {
             <Button
               type="submit"
               loading={isSubmitting}
-              icon={<UserPlus size={16} />}
+              icon={<Send size={16} />}
               className="w-full py-3.5 mt-2 font-semibold bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 border-none text-white shadow-lg shadow-cyan-500/20"
               size="lg"
             >
-              Tao tai khoan
+              Gui ma xac minh
             </Button>
           </form>
+          )}
 
           <p className="text-center text-sm text-slate-400 mt-5">
             Da co tai khoan?{' '}

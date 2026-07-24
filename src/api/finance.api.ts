@@ -1,5 +1,5 @@
 import api from './axios';
-import type { ApiResponse, BudgetProposal, CreateProposalRequest, Transaction } from '../types';
+import type { ApiResponse, BudgetProposal, CreateProposalRequest, Transaction, UpdateProposalRequest } from '../types';
 import { mockApi, USE_MOCK_DATA } from './mockData';
 
 export const financeApi = {
@@ -7,17 +7,37 @@ export const financeApi = {
     USE_MOCK_DATA ? mockApi.finance.createProposal(data) :
     api.post<ApiResponse<BudgetProposal>>('/gateway/finance/proposals', data),
   
-  getProposals: (clubId?: string) =>
-    USE_MOCK_DATA ? mockApi.finance.getProposals(clubId) :
-    api.get<ApiResponse<BudgetProposal[]>>('/gateway/finance/proposals', { params: { clubId } }),
+  getProposals: (params?: { clubId?: string; status?: string; page?: number; pageSize?: number }) =>
+    USE_MOCK_DATA ? mockApi.finance.getProposals(params?.clubId, params?.status) :
+    api.get<ApiResponse<BudgetProposal[]>>('/gateway/finance/proposals', { params }),
   
   getPendingProposals: () =>
     USE_MOCK_DATA ? mockApi.finance.getProposals(undefined, 'Pending') :
     api.get<ApiResponse<BudgetProposal[]>>('/gateway/finance/proposals', { params: { status: 'Pending' } }),
   
-  reviewProposal: (id: string, data: { status: string; approvedAmount: number; feedback?: string }) =>
-    USE_MOCK_DATA ? mockApi.finance.reviewProposal(id, data) :
-    api.put<ApiResponse<boolean>>(`/gateway/finance/proposals/${id}/review`, data),
+  getProposalById: (id: string) =>
+    USE_MOCK_DATA ? mockApi.finance.getProposalById(id) :
+    api.get<ApiResponse<BudgetProposal>>(`/gateway/finance/proposals/${id}`),
+
+  updateProposal: (id: string, data: UpdateProposalRequest) =>
+    USE_MOCK_DATA ? mockApi.finance.updateProposal(id, data) :
+    api.put<ApiResponse<BudgetProposal>>(`/gateway/finance/proposals/${id}`, data),
+
+  submitProposal: (id: string) =>
+    USE_MOCK_DATA ? mockApi.finance.submitProposal(id) :
+    api.post<ApiResponse<BudgetProposal>>(`/gateway/finance/proposals/${id}/submit`),
+
+  approveProposal: (id: string) =>
+    USE_MOCK_DATA ? mockApi.finance.approveProposal(id) :
+    api.post<ApiResponse<BudgetProposal>>(`/gateway/finance/proposals/${id}/approve`),
+
+  partialApproveProposal: (id: string, approvedAmount: number, feedback: string) =>
+    USE_MOCK_DATA ? mockApi.finance.partialApproveProposal(id, approvedAmount, feedback) :
+    api.post<ApiResponse<BudgetProposal>>(`/gateway/finance/proposals/${id}/partial-approve`, { approvedAmount, feedback }),
+
+  rejectProposal: (id: string, feedback: string) =>
+    USE_MOCK_DATA ? mockApi.finance.rejectProposal(id, feedback) :
+    api.post<ApiResponse<BudgetProposal>>(`/gateway/finance/proposals/${id}/reject`, { feedback }),
   
   getBalance: (clubId: string) =>
     USE_MOCK_DATA ? mockApi.finance.getBalance(clubId) :

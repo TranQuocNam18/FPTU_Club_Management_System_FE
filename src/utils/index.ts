@@ -44,13 +44,13 @@ export function getStatusColor(status: string): string {
 
 export function getRoleLabel(role: string): string {
   const map: Record<string, string> = {
-    Admin: 'Quan tri vien',
-    Advisor: 'Co van',
-    ClubManager: 'Quan ly CLB',
-    Student: 'Sinh vien',
-    Leader: 'Chu nhiem',
-    Treasurer: 'Thu quy',
-    Member: 'Thanh vien',
+    Admin: 'Administrator',
+    Advisor: 'Advisor',
+    ClubManager: 'Club Manager',
+    Student: 'Student',
+    Leader: 'Club Lead',
+    Treasurer: 'Treasurer',
+    Member: 'Member',
   };
   return map[role] ?? role;
 }

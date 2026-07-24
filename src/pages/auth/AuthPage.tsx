@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Eye, EyeOff, User, Mail, Lock } from 'lucide-react';
+import { CheckCircle2, Eye, EyeOff, User, Mail, Lock, Shield } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authApi } from '../../api/auth.api';
 import { useAuthStore } from '../../stores/authStore';
@@ -38,6 +38,10 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
   const [showPassLogin, setShowPassLogin] = useState(false);
   const [showPassRegister, setShowPassRegister] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
 
   // Form Hooks
   const {
@@ -84,10 +88,45 @@ export default function AuthPage({ mode }: AuthPageProps) {
         fullName: data.fullName.trim(),
         role: 'Student'
       });
-      toast.success(res.data.message || 'Dang ky thanh cong.');
-      navigate('/login');
+      setVerificationEmail(data.email.trim().toLowerCase());
+      setVerificationCode('');
+      toast.success(res.data.message || 'Ma xac minh da duoc gui den email.');
     } catch (err: any) {
       toast.error(getApiErrorMessage(err, 'Dang ky that bai'));
+    }
+  };
+
+  const onVerifySubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const code = verificationCode.trim();
+    if (!code) {
+      toast.error('Vui long nhap ma xac minh');
+      return;
+    }
+
+    try {
+      setIsVerifying(true);
+      const res = await authApi.verifyEmail({ email: verificationEmail, code });
+      toast.success(res.data.message || 'Xac thuc tai khoan thanh cong.');
+      navigate('/login');
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Ma xac minh khong dung hoac da het han'));
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!verificationEmail) return;
+
+    try {
+      setIsResending(true);
+      const res = await authApi.resendVerificationEmail({ email: verificationEmail });
+      toast.success(res.data.message || 'Da gui lai ma xac minh.');
+    } catch (err: any) {
+      toast.error(getApiErrorMessage(err, 'Khong gui lai duoc ma xac minh'));
+    } finally {
+      setIsResending(false);
     }
   };
 
@@ -186,8 +225,62 @@ export default function AuthPage({ mode }: AuthPageProps) {
 
         {/* ==================== REGISTER PANEL (RIGHT SIDE) ==================== */}
         <div className="credentials-panel signup">
-          <h2 className="slide-element mb-1">Register</h2>
+          <h2 className="slide-element mb-1">{verificationEmail ? 'Verify Email' : 'Register'}</h2>
           
+          {verificationEmail ? (
+          <form onSubmit={onVerifySubmit} className="flex flex-col">
+            <div className="field-wrapper slide-element">
+              <input
+                value={verificationEmail}
+                type="email"
+                placeholder=" "
+                readOnly
+              />
+              <label>Email</label>
+              <Mail className="input-icon" size={16} />
+            </div>
+
+            <div className="field-wrapper slide-element verification-code-field">
+              <input
+                value={verificationCode}
+                onChange={(event) => setVerificationCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder=" "
+                required
+              />
+              <label>Verification Code</label>
+              <Shield className="input-icon" size={16} />
+              <button
+                type="button"
+                className="code-send-button"
+                onClick={handleResendVerification}
+                disabled={isResending}
+              >
+                {isResending ? 'Sending' : 'Send'}
+              </button>
+            </div>
+
+            <div className="field-wrapper slide-element mt-8">
+              <button className="submit-button" type="submit" disabled={isVerifying} aria-busy={isVerifying}>
+                <span className="submit-button-content">
+                  <CheckCircle2 size={16} />
+                  {isVerifying ? 'Verifying...' : 'Verify Account'}
+                </span>
+              </button>
+            </div>
+
+            <div className="switch-link slide-element">
+              <p>
+                Wrong email? <br />
+                <button type="button" onClick={() => setVerificationEmail('')}>
+                  Edit registration
+                </button>
+              </p>
+            </div>
+          </form>
+          ) : (
           <form onSubmit={handleRegisterSubmit(onRegisterSubmit)} className="flex flex-col">
             <div className="field-wrapper slide-element">
               <input
@@ -268,6 +361,7 @@ export default function AuthPage({ mode }: AuthPageProps) {
               </p>
             </div>
           </form>
+          )}
         </div>
 
         {/* ==================== WELCOME MESSAGE (LEFT SIDE FOR SIGNUP) ==================== */}

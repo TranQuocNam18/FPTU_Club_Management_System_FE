@@ -28,9 +28,11 @@ const memberRoleMap: Record<number | string, string> = {
   0: 'Member',
   1: 'Leader',
   2: 'President',
+  3: 'Treasurer',
   'Member': 'Member',
   'Leader': 'Leader',
-  'President': 'President'
+  'President': 'President',
+  'Treasurer': 'Treasurer'
 };
 
 export default function ClubDetailPage() {
@@ -204,6 +206,7 @@ export default function ClubDetailPage() {
                             <option value={0}>Thanh vien</option>
                             <option value={1}>Quan ly CLB</option>
                             <option value={2}>Chu nhiem</option>
+                            <option value={3}>Treasurer</option>
                           </select>
                         ) : (
                           <span className="flex items-center gap-1.5 text-sm text-slate-600">

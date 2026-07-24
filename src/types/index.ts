@@ -50,8 +50,10 @@ export interface LoginResponse {
 export interface ApiResponse<T> {
   data: T;
   message: string;
-  statusCode: number;
-  isSuccess: boolean;
+  success: boolean;
+  errors: Array<{ code: string; field?: string | null; message: string }> | null;
+  meta: Record<string, unknown> | null;
+  traceId: string | null;
 }
 
 // ==================== CLUB ====================
@@ -108,16 +110,20 @@ export interface UpdateClubRequest {
 }
 
 // ClubRole enum: Member=0, Manager=1, President=2
-export type ClubRoleEnum = 0 | 1 | 2;
+export type ClubRoleEnum = 0 | 1 | 2 | 3;
 export const ClubRoleMap: Record<number | string, string> = {
   0: 'Member',
   1: 'Manager',
   2: 'President',
+  3: 'Treasurer',
   Member: 'Member',
   Manager: 'Manager',
   President: 'President',
+  Treasurer: 'Treasurer',
 };
 export const ClubRoleLabel: Record<number | string, string> = {
+  3: 'Treasurer',
+  Treasurer: 'Treasurer',
   0: 'Thành viên',
   1: 'Quản lý CLB',
   2: 'Chủ nhiệm',
@@ -283,7 +289,10 @@ export interface Notification {
   // BE: int type (not string)
   type: number | string;
   isRead: boolean;
+  readAt?: string | null;
   referenceId?: string;
+  targetUrl?: string | null;
+  sourceEventId?: string | null;
   createdAt: string;
 }
 
@@ -292,18 +301,31 @@ export interface BudgetProposal {
   id: string;
   clubId: string;
   clubName?: string;
-  proposerId?: string;
+  activityId?: string | null;
+  proposerId: string;
   eventName: string;
   requestedAmount: number;
-  approvedAmount?: number;
+  approvedAmount?: number | null;
   proposedDate: string;
   status: 'Draft' | 'Pending' | 'Approved' | 'PartiallyApproved' | 'Rejected' | 'Settled' | string;
-  budgetDetailsJson?: string;
-  feedback?: string;
+  budgetDetailsJson?: string | null;
+  feedback?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string | null;
 }
 
 export interface CreateProposalRequest {
   clubId: string;
+  activityId?: string | null;
+  eventName: string;
+  requestedAmount: number;
+  budgetDetailsJson?: string;
+}
+
+export interface UpdateProposalRequest {
+  activityId?: string | null;
   eventName: string;
   requestedAmount: number;
   budgetDetailsJson?: string;

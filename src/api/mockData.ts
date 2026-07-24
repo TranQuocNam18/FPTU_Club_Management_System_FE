@@ -1,5 +1,6 @@
 import type {
   ActivityReport,
+  ApiResponse,
   BudgetProposal,
   Club,
   ClubEvent,
@@ -13,7 +14,7 @@ import type {
 
 export const USE_MOCK_DATA = import.meta.env.VITE_USE_MOCK_DATA !== 'false';
 
-type ApiEnvelope<T> = { data: T; message: string; statusCode: number; isSuccess: boolean };
+type ApiEnvelope<T> = ApiResponse<T>;
 type ApiResult<T> = Promise<{ data: ApiEnvelope<T> }>;
 type RawResult<T> = Promise<{ data: T }>;
 
@@ -26,7 +27,9 @@ const iso = (offsetDays: number, hour = 9) => {
 };
 
 const ok = <T>(data: T, message = 'Success'): ApiResult<T> =>
-  Promise.resolve({ data: { data, message, statusCode: 200, isSuccess: true } });
+  Promise.resolve({
+    data: { data, message, success: true, errors: null, meta: null, traceId: null },
+  });
 
 const raw = <T>(data: T): RawResult<T> => Promise.resolve({ data });
 
@@ -200,13 +203,30 @@ export const mockApi = {
       return ok(data);
     },
     createProposal: async (data: any) => {
-      const proposal: BudgetProposal = { id: `b-${Date.now()}`, clubId: data.clubId, clubName: clubs.find(c => c.id === data.clubId)?.name, proposerId: 'u-manager', eventName: data.eventName, requestedAmount: data.requestedAmount, proposedDate: new Date().toISOString(), status: 'Pending', budgetDetailsJson: data.budgetDetailsJson };
+      const proposal: BudgetProposal = { id: `b-${Date.now()}`, clubId: data.clubId, clubName: clubs.find(c => c.id === data.clubId)?.name, proposerId: 'u-manager', eventName: data.eventName, requestedAmount: data.requestedAmount, proposedDate: new Date().toISOString(), status: 'Draft', budgetDetailsJson: data.budgetDetailsJson };
       proposals = [proposal, ...proposals];
       return ok(proposal);
     },
-    reviewProposal: async (id: string, data: any) => {
-      proposals = proposals.map(p => p.id === id ? { ...p, status: data.status, approvedAmount: data.status === 'Approved' ? data.approvedAmount : undefined } : p);
-      return ok(true);
+    getProposalById: async (id: string) => ok(clone(proposals.find(p => p.id === id)!)),
+    updateProposal: async (id: string, data: any) => {
+      proposals = proposals.map(p => p.id === id ? { ...p, ...data } : p);
+      return ok(clone(proposals.find(p => p.id === id)!));
+    },
+    submitProposal: async (id: string) => {
+      proposals = proposals.map(p => p.id === id ? { ...p, status: 'Pending' } : p);
+      return ok(clone(proposals.find(p => p.id === id)!));
+    },
+    approveProposal: async (id: string) => {
+      proposals = proposals.map(p => p.id === id ? { ...p, status: 'Approved', approvedAmount: p.requestedAmount } : p);
+      return ok(clone(proposals.find(p => p.id === id)!));
+    },
+    partialApproveProposal: async (id: string, approvedAmount: number, feedback: string) => {
+      proposals = proposals.map(p => p.id === id ? { ...p, status: 'PartiallyApproved', approvedAmount, feedback } : p);
+      return ok(clone(proposals.find(p => p.id === id)!));
+    },
+    rejectProposal: async (id: string, feedback: string) => {
+      proposals = proposals.map(p => p.id === id ? { ...p, status: 'Rejected', approvedAmount: null, feedback } : p);
+      return ok(clone(proposals.find(p => p.id === id)!));
     },
     getBalance: async (clubId: string) => ok(transactions.filter(t => t.clubId === clubId).reduce((sum, t) => sum + (t.type === 'Income' ? t.amount : -t.amount), 0)),
     getTransactions: async (clubId: string) => ok(clone(transactions.filter(t => t.clubId === clubId))),
@@ -237,18 +257,33 @@ export const mockApi = {
     },
   },
   notifications: {
-    getMyNotifications: async () => raw({ success: true, data: clone(notifications) }),
+    getMyNotifications: async (params?: { isRead?: boolean; page?: number; pageSize?: number }) => {
+      let filtered = clone(notifications);
+      if (params?.isRead !== undefined) {
+        filtered = filtered.filter(n => n.isRead === params.isRead);
+      }
+      return ok(filtered);
+    },
+    getUnreadCount: async () => {
+      const count = notifications.filter(n => !n.isRead).length;
+      return ok({ unreadCount: count });
+    },
     markAsRead: async (id: string) => {
-      notifications = notifications.map(n => n.id === id ? { ...n, isRead: true } : n);
-      return raw({ success: true, message: 'Notification marked as read.' });
+      notifications = notifications.map(n => n.id === id ? { ...n, isRead: true, readAt: new Date().toISOString() } : n);
+      return ok<any>(null);
     },
     markAllAsRead: async () => {
-      notifications = notifications.map(n => ({ ...n, isRead: true }));
-      return raw({ success: true, message: 'All notifications marked as read.' });
+      const now = new Date().toISOString();
+      notifications = notifications.map(n => ({ ...n, isRead: true, readAt: now }));
+      return ok<any>(null);
+    },
+    deleteNotification: async (id: string) => {
+      notifications = notifications.filter(n => n.id !== id);
+      return ok<any>(null);
     },
     broadcast: async (data: { title: string; message: string }) => {
       notifications = [{ id: `n-${Date.now()}`, userId: 'all', title: data.title, message: data.message, type: 'Info', isRead: false, createdAt: new Date().toISOString() }, ...notifications];
-      return ok({});
+      return ok<any>({});
     },
   },
 };

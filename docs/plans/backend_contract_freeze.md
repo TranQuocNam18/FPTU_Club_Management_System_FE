@@ -347,9 +347,11 @@ Ten domain trong proposal la Activity, nhung giu `/events` de tuong thich FE/BE 
 
 ### 7.8 Notifications/files
 
-- `GET /gateway/notifications`
+- `GET /gateway/notifications` (Query: `isRead`, `page`, `pageSize`)
+- `GET /gateway/notifications/unread-count`
 - `PUT /gateway/notifications/{id}/read`
 - `PUT /gateway/notifications/read-all`
+- `DELETE /gateway/notifications/{id}` (Soft delete)
 - `POST /gateway/notifications/broadcast`
 - `POST /gateway/files`
 - `GET /gateway/files/{id}`

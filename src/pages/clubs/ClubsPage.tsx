@@ -37,8 +37,8 @@ export default function ClubsPage() {
 
   const joinMutation = useMutation({
     mutationFn: (id: string) => clubApi.joinClub(id),
-    onSuccess: () => { toast.success('Da gui don gia nhap CLB!'); qc.invalidateQueries({ queryKey: ['clubs'] }); },
-    onError: () => toast.error('Khong the gia nhap CLB'),
+    onSuccess: () => { toast.success('Join request sent.'); qc.invalidateQueries({ queryKey: ['clubs'] }); },
+    onError: () => toast.error('Unable to join this club'),
   });
 
   const createMutation = useMutation({
@@ -48,10 +48,10 @@ export default function ClubsPage() {
       logoUrl: d.logoUrl || null,
       category: d.category,
       establishedDate: d.establishedDate,
-      advisorId: user?.id || "22222222-2222-2222-2222-222222222222"
+      advisorId: user?.id || ''
     } as any),
-    onSuccess: () => { toast.success('Tao CLB thanh cong!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
-    onError: () => toast.error('Khong the tao CLB'),
+    onSuccess: () => { toast.success('Club created.'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
+    onError: () => toast.error('Unable to create club'),
   });
 
   const { register, handleSubmit, reset, formState: { errors, isSubmitting } } = useForm<CreateForm>({ resolver: zodResolver(createSchema) });
@@ -101,21 +101,22 @@ export default function ClubsPage() {
   }
 
   return (
-    <div>
+    <div className="mx-auto max-w-7xl space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Cau lac bo</h1>
-          <p className="text-slate-500 text-sm mt-1">{clubs.length} CLB trong he thong</p>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900">Clubs</h1>
+          <p className="text-slate-500 text-sm mt-1">{clubs.length} clubs in the system</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:w-72">
             <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Tim kiem CLB..."
-              className="pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-56"
+              placeholder="Search clubs..."
+              className="w-full rounded-2xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-9 text-sm text-slate-700 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
             />
             {search && (
               <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -128,93 +129,95 @@ export default function ClubsPage() {
               icon={<Plus size={16} />}
               onClick={() => setShowCreate(true)}
             >
-              Tao CLB
+              Create Club
             </Button>
           )}
         </div>
       </div>
+      </div>
 
       {/* Grid */}
       {filtered.length === 0 ? (
-        <EmptyState icon={<Building2 size={48} />} title="Khong tim thay CLB nao" description="Thu tim voi tu khoa khac" />
+        <EmptyState icon={<Building2 size={48} />} title="No clubs found" description="Try a different search term." />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {filtered.map(club => (
-            <div key={club.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-200 group">
-              {/* Cover */}
-              <div className="h-24 bg-gradient-to-br from-indigo-400 via-violet-500 to-purple-600 relative">
-                <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_80%_20%,white,transparent)]" />
-                <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-14 h-14 rounded-2xl bg-white shadow-lg flex items-center justify-center text-2xl font-bold text-indigo-600 border-2 border-white">
+            <div key={club.id} className="group rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-indigo-200 hover:shadow-md">
+              <div className="flex items-start gap-4">
+                <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-500 text-xl font-bold text-white shadow-sm">
                   {club.logoUrl ? (
                     <img src={club.logoUrl} alt={club.name} className="w-full h-full object-cover rounded-2xl" />
                   ) : (
                     club.name.charAt(0)
                   )}
                 </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="truncate text-base font-bold text-slate-900 transition-colors group-hover:text-indigo-600">{club.name}</h3>
+                      <p className="mt-0.5 text-sm text-slate-500">{club.category ?? 'Uncategorized'}</p>
+                    </div>
+                    <Badge className={`${getStatusColor(String(club.status))} flex-shrink-0`}>{club.status}</Badge>
+                  </div>
+                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">{club.description}</p>
+                </div>
               </div>
 
-              <div className="pt-9 pb-5 px-5 text-center">
-                <h3 className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">{club.name}</h3>
-                <p className="text-xs text-slate-400 mt-0.5">{club.category ?? 'Chua phan loai'}</p>
-                <Badge className={`${getStatusColor(String(club.status))} mt-2`}>{club.status}</Badge>
-                <p className="text-xs text-slate-400 mt-2 line-clamp-2">{club.description}</p>
-
-                <div className="flex gap-2 mt-4">
+                <div className="mt-5 flex gap-3">
                   <Link to={`/clubs/${club.id}`} className="flex-1">
-                    <button className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-all">
-                      Chi ti?t <ArrowRight size={12} />
+                    <button className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-700 transition-all hover:border-indigo-300 hover:text-indigo-600">
+                      View details <ArrowRight size={14} />
                     </button>
                   </Link>
                   {user?.role === 'Student' && (
                     <button
                       onClick={() => joinMutation.mutate(club.id)}
                       disabled={joinMutation.isPending || club.status !== 'Active'}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      className="flex flex-1 items-center justify-center gap-1.5 rounded-2xl bg-indigo-600 px-3 py-2.5 text-sm font-semibold text-white transition-all hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
-                      <Users size={12} /> Gia nh?p
+                      <Users size={14} /> Join
                     </button>
                   )}
                 </div>
-              </div>
             </div>
           ))}
         </div>
       )}
 
       {/* Create Modal */}
-      <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); reset(); }} title="Tao Cau lac bo moi" size="md">
+      <Modal isOpen={showCreate} onClose={() => { setShowCreate(false); reset(); }} title="Create Club" size="md">
         <form onSubmit={handleSubmit(d => createMutation.mutate(d))} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Ten CLB</label>
-            <input {...register('name')} className="input-field" placeholder="Ten cau lac bo" />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Club name</label>
+            <input {...register('name')} className="input-field" placeholder="Club name" />
             {errors.name && <p className="text-red-500 text-xs mt-1">{errors.name.message}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Danh muc</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
             <select {...register('category')} className="input-field">
-              <option value="">Chon danh muc</option>
-              {['Ky thuat', 'Van hoa', 'The thao', 'Hoc thuat', 'Nghe thuat', 'Cong nghe', 'Tinh nguyen'].map(c => (
+              <option value="">Select category</option>
+              {['Technology', 'Culture', 'Sports', 'Academic', 'Arts', 'Community'].map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
             {errors.category && <p className="text-red-500 text-xs mt-1">{errors.category.message}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Mo ta</label>
-            <textarea {...register('description')} rows={3} className="input-field resize-none" placeholder="Mo ta hoat dong cua CLB..." />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Description</label>
+            <textarea {...register('description')} rows={3} className="input-field resize-none" placeholder="Describe the club..." />
             {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description.message}</p>}
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">URL Logo (tuy chon)</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Logo URL (optional)</label>
             <input {...register('logoUrl')} className="input-field" placeholder="https://..." />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Ngay thanh lap</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Established date</label>
             <input {...register('establishedDate')} type="date" className="input-field" />
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); reset(); }}>Huy</Button>
-            <Button type="submit" loading={isSubmitting || createMutation.isPending}>Tao CLB</Button>
+            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); reset(); }}>Cancel</Button>
+            <Button type="submit" loading={isSubmitting || createMutation.isPending}>Create</Button>
           </div>
         </form>
       </Modal>

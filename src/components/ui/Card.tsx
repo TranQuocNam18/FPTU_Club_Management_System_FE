@@ -43,7 +43,7 @@ export function StatCard({ title, value, icon, gradient, subtitle, trend }: Stat
         {subtitle && <p className="text-xs text-slate-400 mt-1">{subtitle}</p>}
         {trend && (
           <p className={cn('text-xs font-medium mt-1', trend.positive ? 'text-emerald-600' : 'text-red-500')}>
-            {trend.positive ? '+' : '-'} {Math.abs(trend.value)}% so voi thang truoc
+            {trend.positive ? '+' : '-'} {Math.abs(trend.value)}% vs last month
           </p>
         )}
       </div>

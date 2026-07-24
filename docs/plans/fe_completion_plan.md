@@ -43,6 +43,14 @@
 
 ## 🚀 Phase 0 — Foundation (1 ngày)
 
+### Communication Layer across FE phases
+
+- FE communicates with backend business APIs only through REST via Ocelot API Gateway.
+- FE receives realtime notifications through SignalR from Notification Service.
+- gRPC + Protocol Buffers (Protobuf) and Redis Pub/Sub/Streams are internal backend mechanisms; FE must not call or consume them directly.
+- Hangfire is internal scheduled processing; FE only displays its observable result/status through REST or SignalR.
+- Phase 0 validates REST client/auth configuration; Phase 1 wires REST APIs and SignalR; Phase 2 changes presentation only; Phase 3 verifies REST/SignalR behavior, error states and performance. This does not change the existing phase order.
+
 > Unblock mọi thứ trước khi làm UI. Không phase nào có thể chạy nếu Phase 0 chưa xong.
 
 ### [FE-0.1] Fix axios 401 Auto-Refresh
@@ -157,11 +165,11 @@
 
 ## 🔌 Phase 1 — Wire-up API (2–3 ngày)
 
-> Thay 100% mock data bằng real API calls. **Không redesign UI trong phase này** — chỉ wire-up.
+> Wire các API đã được BE nghiệm thu và tách rõ mock demo profile khỏi compliance/E2E profile. **Không redesign UI trong phase này** — chỉ wire-up.
 
 ### [FE-1.1] Wire AdminUsersPage
 
-> Guardrail: "TUYỆT ĐỐI KHÔNG commit mock data vào production branch"
+> Guardrail: UI production/compliance không import mock trực tiếp; mock data chỉ được truy cập qua adapter khi chạy mock demo profile.
 
 **Dependency:** BE Task 1.1 (UsersController) phải xong trước.
 
@@ -176,9 +184,9 @@
 
 **Dependency:** BE Finance Service phải có CRUD endpoints.
 
-- [x] Xóa toàn bộ `mockProposals`, `mockTransactions` trong `finance.api.ts`
-- [x] Implement `financeApi.getProposals()`, `financeApi.reviewProposal()`, `financeApi.getBalance()`, `financeApi.getTransactions()`
-- [x] `useQuery` cho list proposals + transactions
+- [x] Implement proposal create/detail/update/submit/list/review adapters.
+- [ ] Giữ balance, transaction, receipt và settlement action ở mock/disabled state cho đến khi BE API tương ứng hoàn thành.
+- [ ] Chỉ bật transaction/balance query trong compliance profile sau khi route được nghiệm thu qua Gateway.
 - [x] `useMutation` cho create/review proposal + loading/empty states
 
 ---
@@ -189,7 +197,7 @@
 
 - [x] Tạo `src/api/kpi.api.ts` — `kpiApi.getLeaderboard(semester?)`, `kpiApi.getRules()`, CRUD rules
 - [x] `useQuery(['kpi-leaderboard', semester])` với select filter
-- [x] Role-guard: chỉ Admin/Advisor thấy CRUD rules UI
+- [x] Role-guard mục tiêu: chỉ `StudentAffairsAdmin` thấy CRUD rules UI; source legacy `Advisor` phải được migrate.
 
 ---
 
@@ -347,7 +355,7 @@
 - [x] Leaderboard: ranked table với medal icons (🥇🥈🥉) cho top 3
 - [x] Semester filter dropdown
 - [x] Score bar per club + breakdown tooltip on hover
-- [x] KPI Rules tab (Admin/Advisor only): CRUD table inline
+- [x] KPI Rules tab (`StudentAffairsAdmin` only): CRUD table inline
 
 ---
 
@@ -416,7 +424,7 @@
 ## 📋 PR Checklist FE
 
 **Functionality:**
-- [x] Không còn mock data / hardcode
+- [ ] Compliance/E2E profile không dùng mock hoặc hard-coded business data; mock demo profile được giữ độc lập.
 - [x] Tất cả API calls dùng `useQuery` / `useMutation`
 - [x] Error states đã handle
 - [x] Loading states đã có
@@ -465,3 +473,96 @@ Ngày 10:  Phase 3: Animations + Responsive + A11y
 ---
 
 *Soạn ngày 2026-07-01. Cập nhật sau mỗi phase hoàn thành.*
+
+# Current source audit - 2026-07-14
+
+This section is the current working status after checking the source. Older checklist items below may be stale because this file has encoding issues and some items were marked complete before the backend was actually ready.
+
+## Current FE reality
+
+- Public routes use `AuthPage` for `/login` and `/register`; `RegisterPage.tsx` still exists but is not the active `/register` route.
+- Register flow now supports email verification code entry in the active `AuthPage`.
+- `VerifyEmailPage` is no longer a placeholder; it can verify email and resend a code.
+- FE has API adapters for auth, users, clubs, events, reports, notifications, finance and KPI.
+- FE `.env.example` currently sets `VITE_USE_MOCK_DATA=true`.
+- `src/api/mockData.ts` defaults to mock mode unless `VITE_USE_MOCK_DATA=false`.
+- Runtime profiles:
+  - Mock demo profile: `VITE_USE_MOCK_DATA=true`.
+  - PRN232 compliance/E2E profile: `VITE_USE_MOCK_DATA=false`.
+  - Production-like profile: `VITE_USE_MOCK_DATA=false`.
+- Mock demo is only for independent UI demonstration; it must not be used as evidence for REST, gRPC, Redis or background-job compliance.
+- Recent UI pass converted the visible shell/navigation and the main Dashboard, Clubs, Events, KPI and Notifications pages toward English labels and more consistent card/container layout.
+
+## Backend dependency status for FE
+
+| FE module | Current status | Notes |
+| --- | --- | --- |
+| Auth | Real API available | Register/verify/login can call Gateway when mock is off |
+| Users | Real API available | Admin user management adapter exists |
+| Clubs | Real API available | List/detail/create/update/join/member flow mostly available |
+| Events | Real API available | Routed through Gateway |
+| Reports | Real API available | Needs contract/UX polish |
+| Notifications | Real API available | REST + SignalR config available |
+| KPI | Real API available | Leaderboard + rules available |
+| Finance | Mock + real proposal flow | Phase 2 create/submit/list/review APIs exist; Phase 3 balance/transactions missing |
+| Dashboard | Derived/mock | Backend Dashboard API not implemented |
+| Files/Export | Placeholder | Backend upload/export not implemented |
+
+## Remaining FE work
+
+- Create real `.env` for local integration and set `VITE_USE_MOCK_DATA=false` when backend modules are ready.
+- Audit every API adapter against current BE route and payload contract.
+- Finance proposal real flow is available; keep balance, transaction, receipt and settlement calls mock/disabled until the corresponding BE APIs are completed and verified.
+- Replace derived/mock dashboard values once BE Dashboard API exists.
+- Convert remaining Vietnamese/encoding-broken UI text to English, especially ClubDetail, Reports, Finance, Admin pages and modal/toast copy.
+- Continue design cleanup for all routes, not only the five pages recently patched.
+- Verify all role guards against final role contract. Current source still has `Advisor`, while backend contract v1 excludes it.
+- Add a short API handoff table for each page before turning mock off globally.
+- Run `npm run build` after every FE change.
+
+## Finance foundation dependency update - 2026-07-14
+
+- Finance backend service, database migration, Docker container and Gateway health route now exist.
+- Finance proposal create/detail/update/submit/list/review can use the real Gateway flow after Phase 2 verification.
+- Balance, transaction, receipt and settlement remain mock/disabled until their APIs are completed and verified.
+- Verification state `2026-07-15`: Finance backend foundation has not received an independent double-check, so FE must continue treating it as pending final acceptance.
+
+## Finance proposal integration update - 2026-07-15
+
+- Finance adapter now supports create, detail, update, submit, full approval, partial approval and rejection routes.
+- Mock Finance follows the same `Draft -> PendingApproval -> Approved/PartiallyApproved/Rejected` lifecycle as the real proposal API.
+- Finance page is now English and exposes Draft submission plus Admin full/partial/reject review controls.
+- `VITE_USE_MOCK_DATA=true` is the independent mock demo profile. PRN232 compliance/E2E and production-like runs must set it to `false`.
+- FE production build passed after the Finance integration update.
+- Independent double-check is still pending; do not mark Phase 2 finally accepted yet.
+
+## Contract alignment update - 2026-07-14
+
+- FE `ApiResponse<T>` now matches the canonical BE envelope: `success`, `message`, `data`, structured `errors`, `meta`, `traceId`.
+- Mock adapters now return the same envelope shape as real API adapters.
+- `Advisor` is a legacy source role, is not part of canonical contract v1 and must be migrated/mapped to `StudentAffairsAdmin`; new FE guards must not depend on `Advisor`.
+- `npm run build`: pass. SignalR/Rolldown pure-annotation warnings remain non-blocking.
+
+## Notification REST, SignalR & Reconnect Reconciliation Update - 2026-07-22 (Phase CR-4)
+
+- **Connection Lifecycle & Reconnect Reconciliation**:
+  - `src/utils/signalr.ts` updated with dynamic `accessTokenFactory` reading token from `useAuthStore.getState().accessToken` on every reconnect.
+  - Bounded reconnect delay intervals: `[0, 2000, 5000, 10000, 30000]`.
+  - Added `onreconnected` event listener that invalidates `['notifications']` and `['unread-count']` query keys for server reconciliation after network disruption.
+- **UI & Deduplication**:
+  - `Layout.tsx` deduplicates realtime SignalR payloads by notification `id` before prepending to cache.
+  - `Header.tsx` bell uses server `['unread-count']` query, formats badge (hidden if 0, `99+` if > 99), and renders preview dropdown.
+  - `NotificationsPage.tsx` implements filtering (All, Unread), Mark All Read, and Soft Delete.
+- **Verification**:
+  - Tested with `VITE_USE_MOCK_DATA=false` and `VITE_USE_MOCK_DATA=true`.
+  - `npm run build`: PASSED with 0 errors.
+
+## Maintenance rule
+
+- Every future code change must update the relevant plan file in `docs/plans` in the same turn:
+  - FE UI/API/mock changes -> update this `fe_completion_plan.md`.
+  - BE route/contract/env/status/role changes -> update `backend_contract_freeze.md` and/or `backend_gap_completion_plan.md`.
+  - If a planned item becomes complete, mark it complete and add the verification command/result.
+  - If a planned item is blocked by missing backend API, state the exact missing endpoint or contract gap.
+
+---

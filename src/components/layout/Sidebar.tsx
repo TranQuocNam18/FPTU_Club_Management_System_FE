@@ -19,21 +19,21 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: <LayoutDashboard size={18} /> },
-  { label: 'Cau lac bo', to: '/clubs', icon: <Building2 size={18} /> },
-  { label: 'Lich hoat dong', to: '/events', icon: <Calendar size={18} /> },
-  { label: 'Bao cao', to: '/reports', icon: <ClipboardList size={18} />, roles: ['ClubManager', 'Admin', 'Advisor'] },
-  { label: 'Ngan sach', to: '/finance', icon: <DollarSign size={18} />, roles: ['ClubManager', 'Admin', 'Advisor'] },
-  { label: 'Bang xep hang KPI', to: '/kpi', icon: <Trophy size={18} /> },
-  { label: 'Thong bao', to: '/notifications', icon: <Bell size={18} /> },
+  { label: 'Clubs', to: '/clubs', icon: <Building2 size={18} /> },
+  { label: 'Events', to: '/events', icon: <Calendar size={18} /> },
+  { label: 'Reports', to: '/reports', icon: <ClipboardList size={18} />, roles: ['ClubManager', 'Admin', 'Advisor'] },
+  { label: 'Finance', to: '/finance', icon: <DollarSign size={18} />, roles: ['ClubManager', 'Admin', 'Advisor'] },
+  { label: 'KPI Leaderboard', to: '/kpi', icon: <Trophy size={18} /> },
+  { label: 'Notifications', to: '/notifications', icon: <Bell size={18} /> },
 ];
 
 const adminItems: NavItem[] = [
-  { label: 'Quan ly CLB', to: '/admin/clubs', icon: <Building2 size={18} /> },
-  { label: 'Duyet bao cao', to: '/admin/reports', icon: <ClipboardList size={18} /> },
-  { label: 'Duyet ngan sach', to: '/admin/finance', icon: <DollarSign size={18} /> },
-  { label: 'Cau hinh KPI', to: '/admin/kpi-rules', icon: <Star size={18} /> },
-  { label: 'Quan ly nguoi dung', to: '/admin/users', icon: <Users size={18} /> },
-  { label: 'Thong bao he thong', to: '/admin/broadcast', icon: <Megaphone size={18} /> },
+  { label: 'Club Management', to: '/admin/clubs', icon: <Building2 size={18} /> },
+  { label: 'Report Review', to: '/admin/reports', icon: <ClipboardList size={18} /> },
+  { label: 'Budget Review', to: '/admin/finance', icon: <DollarSign size={18} /> },
+  { label: 'KPI Rules', to: '/admin/kpi-rules', icon: <Star size={18} /> },
+  { label: 'Users', to: '/admin/users', icon: <Users size={18} /> },
+  { label: 'Broadcasts', to: '/admin/broadcast', icon: <Megaphone size={18} /> },
 ];
 
 interface SidebarProps {
@@ -134,7 +134,7 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
                 {collapsed ? (
                   <div className="w-6 h-px bg-slate-800" />
                 ) : (
-                  <p className="text-slate-600 text-[10px] font-bold uppercase tracking-widest animate-fadeIn">Quan tri</p>
+                  <p className="text-slate-600 text-[10px] font-bold uppercase tracking-widest animate-fadeIn">Administration</p>
                 )}
               </div>
               {adminItems.map((item) => (
@@ -178,14 +178,14 @@ export function Sidebar({ collapsed, setCollapsed }: SidebarProps) {
           {/* Logout button */}
           <button
             onClick={handleLogout}
-            title={collapsed ? "Dang xuat" : undefined}
+            title={collapsed ? "Sign out" : undefined}
             className={cn(
               "w-full flex items-center rounded-xl text-sm font-medium text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 transition-all duration-150",
               collapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"
             )}
           >
             <LogOut size={18} className="transition-transform group-hover:scale-110" />
-            {!collapsed && <span>Dang xuat</span>}
+            {!collapsed && <span>Sign out</span>}
           </button>
         </div>
       </aside>
