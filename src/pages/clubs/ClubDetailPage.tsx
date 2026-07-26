@@ -1,464 +1,489 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowLeft, Calendar, MapPin, Users, Plus, Crown, Wallet, UserMinus, Edit2, X, Ban } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link, useParams } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import {
+  ArrowLeft,
+  CalendarDays,
+  Check,
+  ClipboardCheck,
+  Edit2,
+  MapPin,
+  Plus,
+  UserMinus,
+  UsersRound,
+  X,
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clubApi } from '../../api/club.api';
 import { eventApi } from '../../api/event.api';
-import { useAuthStore } from '../../stores/authStore';
+import { reportApi } from '../../api/report.api';
+import {
+  ClubEmptyState,
+  ClubErrorState,
+  ClubLogo,
+  ClubSection,
+  ClubStatusBadge,
+  ConfirmDialog,
+  MembershipStatusBadge,
+} from '../../components/clubs/ClubPrimitives';
+import { Avatar } from '../../components/ui/Avatar';
 import { Badge } from '../../components/ui/Badge';
 import { Button } from '../../components/ui/Button';
-import { PageSpinner } from '../../components/ui/Spinner';
 import { Modal } from '../../components/ui/Modal';
+import { Skeleton } from '../../components/ui/Skeleton';
+import { useGsapReveal } from '../../hooks/useGsapReveal';
+import { useAuthStore } from '../../stores/authStore';
+import type { ActivityReport, ClubEvent, ClubMember, CreateEventRequest } from '../../types';
 import {
-  getStatusColor, formatDate, formatDateTime,
-} from '../../utils';
-import { useForm } from 'react-hook-form';
-import {
-  ClubRoleMap, ClubRoleLabel, MembershipStatusMap,
-  EventStatusMap, EventStatusLabel,
+  ClubRoleLabel,
+  EventStatusLabel,
+  EventStatusMap,
+  MembershipStatusMap,
+  ReportStatusMap,
 } from '../../types';
+import { formatDate, formatDateTime, getApiError, getStatusColor } from '../../utils';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-const memberStatusMap: Record<number | string, string> = {
-  0: 'Pending', 1: 'Approved', 2: 'Rejected', 3: 'Left',
-  Pending: 'Pending', Approved: 'Approved', Rejected: 'Rejected', Left: 'Left',
-};
-
-const getClubStatusDisplay = (status: any): string => {
-  const s = String(status);
-  return ({ '0': 'PendingApproval', '1': 'Active', '2': 'Suspended', '3': 'Inactive' }[s]) ?? s;
-};
+type ClubTab = 'overview' | 'members' | 'events' | 'reports';
+type EventFormValues = Omit<CreateEventRequest, 'clubId'>;
 
 export default function ClubDetailPage() {
-  const { id } = useParams<{ id: string }>();
-  const { user } = useAuthStore();
-  const qc = useQueryClient();
-  const [tab, setTab] = useState<'info' | 'members' | 'events'>('info');
-  const [showCreateEvent, setShowCreateEvent] = useState(false);
-  const [editEventTarget, setEditEventTarget] = useState<any>(null);
+  const { id = '' } = useParams<{ id: string }>();
+  const user = useAuthStore((state) => state.user);
+  const queryClient = useQueryClient();
+  const [tab, setTab] = useState<ClubTab>('overview');
+  const [eventModal, setEventModal] = useState<'create' | 'edit' | null>(null);
+  const [editingEvent, setEditingEvent] = useState<ClubEvent | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<ClubMember | null>(null);
+  const scopeRef = useGsapReveal<HTMLDivElement>({ animationKey: `club-detail-${id}` });
+  const isAdmin = user?.role === 'StudentAffairsAdmin';
+  const isStudent = user?.role === 'Student';
 
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
-  // Only Admin/ClubManager can manage (update members, create events, etc.)
-  const isManagerOrAdmin = user?.role === 'Admin' || user?.role === 'Advisor' || user?.role === 'ClubManager';
-
-  const { data: clubRes, isLoading } = useQuery({
+  const clubQuery = useQuery({
     queryKey: ['club', id],
-    queryFn: () => clubApi.getById(id!),
+    queryFn: () => clubApi.getById(id),
+    enabled: Boolean(id),
   });
-  const { data: membersRes } = useQuery({
+  const membershipsQuery = useQuery({
+    queryKey: ['my-memberships', user?.id],
+    queryFn: clubApi.getMyMemberships,
+    enabled: Boolean(user?.id),
+  });
+  const myMembership = (membershipsQuery.data?.data.data ?? []).find((membership) => membership.clubId === id);
+  const isApprovedLeader = Boolean(
+    myMembership && Number(myMembership.role) === 2 && Number(myMembership.status) === 1,
+  );
+  const canManageMembers = isAdmin || isApprovedLeader;
+  const canManageEvents = isAdmin || isApprovedLeader;
+  const canViewReports = isAdmin || isApprovedLeader;
+
+  const membersQuery = useQuery({
     queryKey: ['club-members', id],
-    queryFn: () => clubApi.getMembers(id!),
+    queryFn: () => clubApi.getMembers(id),
+    enabled: Boolean(id && tab === 'members'),
   });
-  const { data: eventsRes } = useQuery({
+  const eventsQuery = useQuery({
     queryKey: ['club-events', id],
-    queryFn: () => eventApi.getByClub(id!),
+    queryFn: () => eventApi.getByClub(id),
+    enabled: Boolean(id && tab === 'events'),
+  });
+  const reportsQuery = useQuery({
+    queryKey: ['reports', id],
+    queryFn: () => reportApi.getByClub(id),
+    enabled: Boolean(id && tab === 'reports' && canViewReports),
   });
 
-  // Check if current ClubManager is a Manager/President of THIS specific club
-  // BE ClubRole: Member=0, Manager=1, President=2
-  const isManagerOfThisClub = React.useMemo(() => {
-    if (user?.role === 'Admin' || user?.role === 'Advisor') return true;
-    if (user?.role !== 'ClubManager') return false;
-    const members: any[] = membersRes?.data?.data ?? [];
-    return members.some((m: any) =>
-      m.userId === user?.id &&
-      (m.role === 1 || m.role === 2) && // Manager=1, President=2
-      (m.status === 1) // Approved
-    );
-  }, [membersRes, user]);
+  const members = useMemo(() => membersQuery.data?.data.data ?? [], [membersQuery.data]);
+  const events = useMemo(() => (eventsQuery.data?.data.data ?? []) as ClubEvent[], [eventsQuery.data]);
+  const reports = useMemo(() => reportsQuery.data?.data.data ?? [], [reportsQuery.data]);
+  const pendingMembers = members.filter((member) => MembershipStatusMap[member.status] === 'Pending');
+  const approvedMembers = members.filter((member) => MembershipStatusMap[member.status] === 'Approved');
 
-  // ── Mutations ──────────────────────────────────────────────────────────────
+  const invalidateMembers = () => queryClient.invalidateQueries({ queryKey: ['club-members', id] });
+  const approveMutation = useMutation({
+    mutationFn: (userId: string) => clubApi.approveMember(id, userId),
+    onSuccess: async () => { toast.success('Đã duyệt yêu cầu gia nhập.'); await invalidateMembers(); },
+    onError: () => toast.error('Không thể duyệt yêu cầu gia nhập.'),
+  });
+  const rejectMutation = useMutation({
+    mutationFn: (userId: string) => clubApi.rejectMember(id, userId),
+    onSuccess: async () => { toast.success('Đã từ chối yêu cầu gia nhập.'); await invalidateMembers(); },
+    onError: () => toast.error('Không thể từ chối yêu cầu gia nhập.'),
+  });
+  const roleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: number }) => clubApi.updateMemberRole(id, userId, role, 1),
+    onSuccess: async () => { toast.success('Đã cập nhật vai trò.'); await invalidateMembers(); },
+    onError: () => toast.error('Không thể cập nhật vai trò.'),
+  });
   const removeMutation = useMutation({
-    mutationFn: (userId: string) => clubApi.removeMember(id!, userId),
-    onSuccess: () => { toast.success('Đã xóa thành viên'); qc.invalidateQueries({ queryKey: ['club-members', id] }); },
-    onError: () => toast.error('Không thể xóa thành viên'),
-  });
-
-  const approveMemberMutation = useMutation({
-    mutationFn: ({ userId, role, status }: { userId: string; role: number; status: number }) =>
-      clubApi.updateMemberRole(id!, userId, role, status),
-    onSuccess: () => {
-      toast.success('Cập nhật thành viên thành công!');
-      qc.invalidateQueries({ queryKey: ['club-members', id] });
+    mutationFn: (userId: string) => clubApi.removeMember(id, userId),
+    onSuccess: async () => {
+      toast.success('Đã xóa thành viên khỏi CLB.');
+      setRemoveTarget(null);
+      await invalidateMembers();
     },
-    onError: () => toast.error('Không thể cập nhật thành viên'),
+    onError: () => toast.error('Không thể xóa thành viên.'),
+  });
+  const joinMutation = useMutation({
+    mutationFn: () => clubApi.joinClub(id),
+    onSuccess: async () => {
+      toast.success('Đã gửi yêu cầu gia nhập CLB.');
+      await queryClient.invalidateQueries({ queryKey: ['my-memberships', user?.id] });
+      await queryClient.invalidateQueries({ queryKey: ['clubs'] });
+    },
+    onError: () => toast.error('Không thể gửi yêu cầu gia nhập CLB.'),
   });
 
-  // ── Event Form ─────────────────────────────────────────────────────────────
-  const { register, handleSubmit, reset, setValue, formState: { errors } } = useForm<{
-    title: string; description: string; expectedDate: string; location: string;
-  }>();
-
+  const eventForm = useForm<EventFormValues>();
   const createEventMutation = useMutation({
-    mutationFn: (d: any) => eventApi.create({ ...d, clubId: id! }),
-    onSuccess: () => {
-      toast.success('Tạo sự kiện thành công!');
-      qc.invalidateQueries({ queryKey: ['club-events', id] });
-      setShowCreateEvent(false);
-      reset();
+    mutationFn: (values: EventFormValues) => eventApi.create({ ...values, clubId: id }),
+    onSuccess: async () => {
+      toast.success('Tạo sự kiện thành công.');
+      closeEventModal();
+      await queryClient.invalidateQueries({ queryKey: ['club-events', id] });
     },
-    onError: (error: any) => {
-      const serverError = error.response?.data;
-      let errorMsg = 'Không thể tạo sự kiện';
-      if (serverError?.errors) {
-        errorMsg = Object.entries(serverError.errors)
-          .map(([field, msgs]: any) => `${field}: ${msgs.join(', ')}`)
-          .join('; ');
-      } else if (serverError?.message || serverError?.Message) {
-        errorMsg = serverError.message || serverError.Message;
-      }
-      toast.error(errorMsg);
-    },
+    onError: (error) => toast.error(getApiError(error, 'Không thể tạo sự kiện.')),
   });
-
   const updateEventMutation = useMutation({
-    mutationFn: (d: any) => eventApi.update(editEventTarget.id, d),
-    onSuccess: () => {
-      toast.success('Cập nhật sự kiện thành công!');
-      qc.invalidateQueries({ queryKey: ['club-events', id] });
-      setEditEventTarget(null);
-      reset();
+    mutationFn: (values: EventFormValues) => eventApi.update(editingEvent!.id, values),
+    onSuccess: async () => {
+      toast.success('Cập nhật sự kiện thành công.');
+      closeEventModal();
+      await queryClient.invalidateQueries({ queryKey: ['club-events', id] });
     },
-    onError: () => toast.error('Không thể cập nhật sự kiện'),
+    onError: (error) => toast.error(getApiError(error, 'Không thể cập nhật sự kiện.')),
   });
-
   const cancelEventMutation = useMutation({
     mutationFn: (eventId: string) => eventApi.cancel(eventId),
-    onSuccess: () => {
-      toast.success('Đã hủy sự kiện');
-      qc.invalidateQueries({ queryKey: ['club-events', id] });
+    onSuccess: async () => {
+      toast.success('Đã hủy sự kiện.');
+      await queryClient.invalidateQueries({ queryKey: ['club-events', id] });
     },
-    onError: () => toast.error('Không thể hủy sự kiện'),
+    onError: () => toast.error('Không thể hủy sự kiện.'),
   });
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-  if (isLoading) return <PageSpinner />;
-  const club = clubRes?.data?.data;
-  const members: any[] = membersRes?.data?.data ?? [];
-  const events: any[] = eventsRes?.data?.data ?? [];
+  function closeEventModal() {
+    setEventModal(null);
+    setEditingEvent(null);
+    eventForm.reset();
+  }
 
-  if (!club) return <div className="text-center py-12 text-slate-500">CLB không tồn tại</div>;
+  function openEditEvent(event: ClubEvent) {
+    setEditingEvent(event);
+    eventForm.reset({
+      title: event.title,
+      description: event.description,
+      expectedDate: event.expectedDate.slice(0, 16),
+      location: event.location,
+    });
+    setEventModal('edit');
+  }
 
-  const openEditEvent = (event: any) => {
-    setEditEventTarget(event);
-    setValue('title', event.title);
-    setValue('description', event.description);
-    setValue('expectedDate', event.expectedDate ? event.expectedDate.slice(0, 16) : '');
-    setValue('location', event.location);
-  };
+  if (clubQuery.isLoading) {
+    return <div className="club-detail-skeleton" role="status" aria-label="Đang tải thông tin câu lạc bộ"><Skeleton className="h-64 w-full bg-slate-200" /><Skeleton className="mt-5 h-16 w-full bg-slate-200" /></div>;
+  }
+  if (clubQuery.isError) {
+    return <ClubErrorState message="Không thể tải thông tin câu lạc bộ." onRetry={() => void clubQuery.refetch()} />;
+  }
+  const club = clubQuery.data?.data.data;
+  if (!club) {
+    return <ClubEmptyState title="Không tìm thấy câu lạc bộ" description="Câu lạc bộ không tồn tại hoặc không còn khả dụng." action={<Link to="/clubs">Quay lại danh sách</Link>} />;
+  }
 
-  const clubStatusDisplay = getClubStatusDisplay(club.status);
+  const tabs: Array<{ id: ClubTab; label: string }> = [
+    { id: 'overview', label: 'Tổng quan' },
+    { id: 'members', label: 'Thành viên' },
+    { id: 'events', label: 'Sự kiện' },
+    ...(canViewReports ? [{ id: 'reports' as const, label: 'Báo cáo' }] : []),
+  ];
+  const membershipResolved = !isStudent || membershipsQuery.isSuccess;
 
   return (
-    <div>
-      <Link to="/clubs" className="inline-flex items-center gap-1.5 text-sm text-slate-500 hover:text-indigo-600 mb-5 transition-colors">
-        <ArrowLeft size={16} /> Quay lại danh sách
-      </Link>
+    <div ref={scopeRef} className="club-detail">
+      <Link to="/clubs" className="club-detail__back" data-gsap-item><ArrowLeft size={17} aria-hidden="true" />Danh sách câu lạc bộ</Link>
 
-      {/* Hero */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mb-6">
-        <div className="h-36 bg-gradient-to-r from-indigo-500 via-violet-600 to-purple-700 relative">
-          <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_80%_50%,white,transparent_70%)]" />
-        </div>
-        <div className="px-6 pb-6">
-          <div className="flex items-end gap-4 -mt-10 mb-4">
-            <div className="w-20 h-20 rounded-2xl bg-white shadow-lg border-2 border-white flex items-center justify-center text-3xl font-bold text-indigo-600">
-              {club.logoUrl ? <img src={club.logoUrl} alt={club.name} className="w-full h-full object-cover rounded-2xl" /> : club.name.charAt(0)}
-            </div>
-            <div className="flex-1 pb-2">
-              <div className="flex items-center gap-3 flex-wrap">
-                <h1 className="text-xl font-bold text-slate-800">{club.name}</h1>
-                <Badge className={getStatusColor(clubStatusDisplay)}>{clubStatusDisplay}</Badge>
-              </div>
-              {club.category && <p className="text-sm text-slate-500 mt-0.5">{club.category}{club.establishedDate ? ` • Thành lập ${formatDate(club.establishedDate)}` : ''}</p>}
-            </div>
-            {/* Tạo sự kiện: chỉ Admin/Advisor hoặc ClubManager của club này */}
-            {isManagerOfThisClub && (
-              <Button icon={<Plus size={16} />} size="sm" onClick={() => { reset(); setShowCreateEvent(true); }}>Tạo sự kiện</Button>
-            )}
+      <header className="club-hero" data-gsap-item>
+        <div className="club-hero__identity">
+          <ClubLogo club={club} size="lg" />
+          <div>
+            <div className="club-hero__title"><h1>{club.name}</h1><ClubStatusBadge status={club.status} /></div>
+            {club.category && <p>{club.category}</p>}
+            {club.establishedDate && <p>Thành lập {formatDate(club.establishedDate)}</p>}
           </div>
-          <p className="text-sm text-slate-600">{club.description}</p>
         </div>
-      </div>
+        <p className="club-hero__description">{club.description || 'CLB chưa cập nhật mô tả.'}</p>
+        <div className="club-hero__actions">
+          {isStudent && !membershipResolved && <span className="club-join-pending">Đang kiểm tra membership...</span>}
+          {isStudent && membershipResolved && myMembership && <MembershipStatusBadge member={myMembership} />}
+          {isStudent && membershipResolved && !myMembership && (
+            <Button
+              loading={joinMutation.isPending}
+              disabled={String(club.status) !== '1' && String(club.status) !== 'Active'}
+              onClick={() => joinMutation.mutate()}
+              icon={<UsersRound size={17} aria-hidden="true" />}
+            >
+              Gia nhập câu lạc bộ
+            </Button>
+          )}
+          {canManageEvents && <Button variant="outline" onClick={() => { eventForm.reset(); setEventModal('create'); }} icon={<Plus size={17} aria-hidden="true" />}>Tạo sự kiện</Button>}
+        </div>
+        {isStudent && membershipsQuery.isError && (
+          <ClubErrorState message="Không thể xác định membership nên thao tác gia nhập được ẩn để tránh gửi trùng." onRetry={() => void membershipsQuery.refetch()} />
+        )}
+      </header>
 
-      {/* Tabs */}
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
-        {(['info', 'members', 'events'] as const).map(t => (
-          <button key={t}
-            onClick={() => setTab(t)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${tab === t ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+      <div className="club-tabs" role="tablist" aria-label="Nội dung câu lạc bộ" data-gsap-item>
+        {tabs.map((item) => (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            aria-controls={`club-panel-${item.id}`}
+            id={`club-tab-${item.id}`}
+            tabIndex={tab === item.id ? 0 : -1}
+            onClick={() => setTab(item.id)}
+            key={item.id}
           >
-            {t === 'info' ? 'Thông tin' : t === 'members' ? `Thành viên (${members.length})` : `Sự kiện (${events.length})`}
+            {item.label}
           </button>
         ))}
       </div>
 
-      {/* ── Members Tab ───────────────────────────────────────────────────── */}
-      {tab === 'members' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Thành viên</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Vai trò</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Ngày tham gia</th>
-                  <th className="px-6 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Trạng thái</th>
-                  {isManagerOfThisClub && <th className="px-6 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Thao tác</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {members.map((m: any) => {
-                  const mappedStatus = memberStatusMap[m.status] ?? String(m.status);
-                  const isPending = m.status === 0 || m.status === 'Pending';
-                  const roleLabel = ClubRoleLabel[m.role] ?? `Role ${m.role}`;
-                  const roleIcon = m.role === 2 ? <Crown size={12} className="text-amber-500" /> :
-                    m.role === 1 ? <Wallet size={12} className="text-emerald-500" /> : null;
-                  return (
-                    <tr key={m.id || m.userId} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold">
-                            {m.fullName?.charAt(0) ?? m.userId?.charAt(0)?.toUpperCase() ?? 'U'}
-                          </div>
-                          <div>
-                            <p className="text-sm font-medium text-slate-800">{m.fullName || `Thành viên (${m.userId?.slice(0, 8)}...)`}</p>
-                            <p className="text-xs text-slate-400">{m.email || m.userId}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        {isManagerOfThisClub && !isPending ? (
-                          <select
-                            value={m.role ?? 0}
-                            onChange={(e) => approveMemberMutation.mutate({
-                              userId: m.userId,
-                              role: parseInt(e.target.value),
-                              status: 1,
-                            })}
-                            className="text-sm text-slate-700 border border-slate-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                          >
-                            <option value={0}>Thành viên</option>
-                            <option value={1}>Quản lý CLB</option>
-                            <option value={2}>Chủ nhiệm</option>
-                          </select>
-                        ) : (
-                          <span className="flex items-center gap-1.5 text-sm text-slate-600">
-                            {roleIcon} {roleLabel}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-slate-500">{formatDate(m.joinedAt || m.joinDate)}</td>
-                      <td className="px-6 py-4"><Badge className={getStatusColor(mappedStatus)}>{mappedStatus}</Badge></td>
-                      {isManagerOfThisClub && (
-                        <td className="px-6 py-4">
-                          <div className="flex items-center gap-2 justify-end">
-                            {isPending && (
-                              <>
-                                <button
-                                  onClick={() => approveMemberMutation.mutate({ userId: m.userId, role: 0, status: 1 })}
-                                  disabled={approveMemberMutation.isPending}
-                                  className="text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                                >Duyệt</button>
-                                <button
-                                  onClick={() => removeMutation.mutate(m.userId)}
-                                  disabled={removeMutation.isPending}
-                                  className="text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50"
-                                >Từ chối</button>
-                              </>
-                            )}
-                            {!isPending && (
-                              <button onClick={() => removeMutation.mutate(m.userId)}
-                                disabled={removeMutation.isPending}
-                                className="text-red-400 hover:text-red-600 transition-colors p-1">
-                                <UserMinus size={16} />
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+      <div role="tabpanel" id={`club-panel-${tab}`} aria-labelledby={`club-tab-${tab}`} tabIndex={0}>
+        {tab === 'overview' && (
+          <ClubSection title="Thông tin câu lạc bộ" description="Thông tin trực tiếp từ hồ sơ CLB hiện tại.">
+            <dl className="club-facts">
+              <div><dt>Trạng thái</dt><dd><ClubStatusBadge status={club.status} /></dd></div>
+              {club.category && <div><dt>Danh mục</dt><dd>{club.category}</dd></div>}
+              {club.establishedDate && <div><dt>Ngày thành lập</dt><dd>{formatDate(club.establishedDate)}</dd></div>}
+              {!club.category && !club.establishedDate && <div><dt>Metadata bổ sung</dt><dd>Chưa được API cung cấp.</dd></div>}
+            </dl>
+          </ClubSection>
+        )}
+        {tab === 'members' && (
+          <MembersPanel
+            query={membersQuery}
+            members={approvedMembers}
+            pendingMembers={pendingMembers}
+            canManage={canManageMembers}
+            currentUserId={user?.id}
+            onApprove={(userId) => approveMutation.mutate(userId)}
+            onReject={(userId) => rejectMutation.mutate(userId)}
+            onRoleChange={(userId, role) => roleMutation.mutate({ userId, role })}
+            onRemove={setRemoveTarget}
+            mutationPending={approveMutation.isPending || rejectMutation.isPending || roleMutation.isPending}
+          />
+        )}
+        {tab === 'events' && (
+          <EventsPanel
+            query={eventsQuery}
+            events={events}
+            canManage={canManageEvents}
+            onCreate={() => { eventForm.reset(); setEventModal('create'); }}
+            onEdit={openEditEvent}
+            onCancel={(eventId) => cancelEventMutation.mutate(eventId)}
+          />
+        )}
+        {tab === 'reports' && canViewReports && <ReportsPanel query={reportsQuery} reports={reports} />}
+      </div>
 
-      {/* ── Events Tab ────────────────────────────────────────────────────── */}
-      {tab === 'events' && (
-        <div className="space-y-3">
-          {events.length === 0 ? (
-            <div className="text-center py-12 text-slate-400 bg-white rounded-2xl border border-slate-100">
-              <Calendar size={40} className="mx-auto mb-3 text-slate-200" />
-              <p>Chưa có sự kiện nào</p>
-              {isManagerOfThisClub && (
-                <Button icon={<Plus size={14} />} size="sm" className="mt-4" onClick={() => { reset(); setShowCreateEvent(true); }}>Tạo sự kiện đầu tiên</Button>
-              )}
+      <Modal isOpen={eventModal !== null} onClose={closeEventModal} title={eventModal === 'edit' ? 'Chỉnh sửa sự kiện' : 'Tạo sự kiện'}>
+        <EventForm
+          form={eventForm}
+          pending={createEventMutation.isPending || updateEventMutation.isPending}
+          onCancel={closeEventModal}
+          onSubmit={(values) => eventModal === 'edit' ? updateEventMutation.mutate(values) : createEventMutation.mutate(values)}
+        />
+      </Modal>
+
+      <ConfirmDialog
+        open={Boolean(removeTarget)}
+        title="Xóa thành viên"
+        description={`Bạn có chắc muốn xóa ${removeTarget?.fullName || 'thành viên này'} khỏi câu lạc bộ?`}
+        confirmLabel="Xóa thành viên"
+        pending={removeMutation.isPending}
+        onClose={() => setRemoveTarget(null)}
+        onConfirm={() => removeTarget && removeMutation.mutate(removeTarget.userId)}
+      />
+    </div>
+  );
+}
+
+function MembersPanel({
+  query,
+  members,
+  pendingMembers,
+  canManage,
+  currentUserId,
+  mutationPending,
+  onApprove,
+  onReject,
+  onRoleChange,
+  onRemove,
+}: {
+  query: ReturnType<typeof useQuery>;
+  members: ClubMember[];
+  pendingMembers: ClubMember[];
+  canManage: boolean;
+  currentUserId?: string;
+  mutationPending: boolean;
+  onApprove: (userId: string) => void;
+  onReject: (userId: string) => void;
+  onRoleChange: (userId: string, role: number) => void;
+  onRemove: (member: ClubMember) => void;
+}) {
+  if (query.isLoading) return <ClubMembersSkeleton />;
+  if (query.isError) return <ClubErrorState message="Không thể tải danh sách thành viên." onRetry={() => void query.refetch()} />;
+  return (
+    <div className="club-panel-stack">
+      {canManage && (
+        <ClubSection title="Yêu cầu gia nhập" description="Sử dụng dedicated approve/reject endpoints hiện có.">
+          {pendingMembers.length === 0 ? <ClubEmptyState title="Không có yêu cầu đang chờ" description="Hiện chưa có membership Pending." /> : (
+            <div className="join-request-list">
+              {pendingMembers.map((member) => (
+                <article key={member.id}>
+                  <MemberIdentity member={member} />
+                  <time dateTime={member.joinedAt}>{formatDate(member.joinedAt)}</time>
+                  <div>
+                    <Button size="sm" variant="outline" disabled={mutationPending} onClick={() => onReject(member.userId)} icon={<X size={15} aria-hidden="true" />}>Từ chối</Button>
+                    <Button size="sm" disabled={mutationPending} onClick={() => onApprove(member.userId)} icon={<Check size={15} aria-hidden="true" />}>Duyệt</Button>
+                  </div>
+                </article>
+              ))}
             </div>
-          ) : events.map((e: any) => {
-            const statusLabel = EventStatusLabel[e.status] ?? EventStatusMap[e.status] ?? String(e.status);
-            const isCancellable = e.status !== 4 && e.status !== 5 && e.status !== 'Completed' && e.status !== 'Cancelled';
+          )}
+        </ClubSection>
+      )}
+      <ClubSection title="Thành viên" description={`${members.length} membership đã được duyệt trong response hiện tại.`}>
+        {members.length === 0 ? <ClubEmptyState title="Chưa có thành viên" description="Không có membership Approved để hiển thị." /> : (
+          <div className="member-grid">
+            {members.map((member) => (
+              <article className="member-card" key={member.id}>
+                <MemberIdentity member={member} />
+                <div className="member-card__meta">
+                  {canManage ? (
+                    <label>
+                      <span className="sr-only">Vai trò của {member.fullName || member.userId}</span>
+                      <select value={Number(member.role)} disabled={mutationPending} onChange={(event) => onRoleChange(member.userId, Number(event.target.value))}>
+                        <option value={0}>Thành viên</option>
+                        <option value={2}>Chủ nhiệm</option>
+                        <option value={3}>Thủ quỹ</option>
+                      </select>
+                    </label>
+                  ) : <Badge className="bg-indigo-100 text-indigo-700">{ClubRoleLabel[member.role] ?? `Role ${member.role}`}</Badge>}
+                  <time dateTime={member.joinedAt}>Tham gia {formatDate(member.joinedAt)}</time>
+                </div>
+                {canManage && member.userId !== currentUserId && (
+                  <button type="button" className="member-card__remove" onClick={() => onRemove(member)} aria-label={`Xóa ${member.fullName || 'thành viên'} khỏi CLB`}>
+                    <UserMinus size={17} aria-hidden="true" />
+                  </button>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
+      </ClubSection>
+    </div>
+  );
+}
+
+function MemberIdentity({ member }: { member: ClubMember }) {
+  const name = member.fullName || `Thành viên ${member.userId.slice(0, 8)}`;
+  return (
+    <div className="member-identity">
+      <Avatar name={name} size="md" />
+      <div><strong>{name}</strong><small>{ClubRoleLabel[member.role] ?? `Role ${member.role}`}</small></div>
+    </div>
+  );
+}
+
+function EventsPanel({
+  query,
+  events,
+  canManage,
+  onCreate,
+  onEdit,
+  onCancel,
+}: {
+  query: ReturnType<typeof useQuery>;
+  events: ClubEvent[];
+  canManage: boolean;
+  onCreate: () => void;
+  onEdit: (event: ClubEvent) => void;
+  onCancel: (eventId: string) => void;
+}) {
+  if (query.isLoading) return <ClubMembersSkeleton />;
+  if (query.isError) return <ClubErrorState message="Không thể tải sự kiện của CLB." onRetry={() => void query.refetch()} />;
+  return (
+    <ClubSection title="Sự kiện và hoạt động" description="Dữ liệu trực tiếp từ endpoint sự kiện theo CLB." action={canManage ? <Button size="sm" onClick={onCreate} icon={<Plus size={15} aria-hidden="true" />}>Tạo sự kiện</Button> : undefined}>
+      {events.length === 0 ? <ClubEmptyState title="Chưa có sự kiện" description="CLB chưa có sự kiện trong dữ liệu hiện tại." /> : (
+        <div className="club-event-list">
+          {events.map((event) => {
+            const canonical = EventStatusMap[event.status] ?? String(event.status);
+            const cancellable = !['Completed', 'Cancelled'].includes(canonical);
             return (
-              <div key={e.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 p-5 flex items-start gap-4 hover:shadow-md transition-shadow">
-                <div className="w-12 h-12 rounded-xl bg-indigo-100 flex items-center justify-center flex-shrink-0">
-                  <Calendar size={22} className="text-indigo-600" />
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <h3 className="text-sm font-semibold text-slate-800">{e.title}</h3>
-                    <Badge className={getStatusColor(statusLabel)}>{statusLabel}</Badge>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">{e.description}</p>
-                  <div className="flex items-center gap-4 mt-2 text-xs text-slate-400">
-                    <span className="flex items-center gap-1"><Calendar size={12} />{formatDateTime(e.expectedDate)}</span>
-                    <span className="flex items-center gap-1"><MapPin size={12} />{e.location}</span>
-                  </div>
-                </div>
-                {isManagerOfThisClub && (
-                  <div className="flex gap-1.5 flex-shrink-0">
-                    <button onClick={() => openEditEvent(e)}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all">
-                      <Edit2 size={14} />
-                    </button>
-                    {isCancellable && (
-                      <button onClick={() => cancelEventMutation.mutate(e.id)}
-                        disabled={cancelEventMutation.isPending}
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all disabled:opacity-50">
-                        <Ban size={14} />
-                      </button>
-                    )}
+              <article key={event.id}>
+                <div className="club-event-list__date"><CalendarDays size={19} aria-hidden="true" /><time dateTime={event.expectedDate}>{formatDateTime(event.expectedDate)}</time></div>
+                <div><h3>{event.title}</h3><p><MapPin size={14} aria-hidden="true" />{event.location}</p></div>
+                <Badge className={getStatusColor(canonical)}>{EventStatusLabel[event.status] ?? canonical}</Badge>
+                {canManage && (
+                  <div className="club-event-list__actions">
+                    <button type="button" onClick={() => onEdit(event)} aria-label={`Chỉnh sửa ${event.title}`}><Edit2 size={17} aria-hidden="true" /></button>
+                    {cancellable && <button type="button" onClick={() => onCancel(event.id)} aria-label={`Hủy ${event.title}`}><X size={17} aria-hidden="true" /></button>}
                   </div>
                 )}
-              </div>
+              </article>
             );
           })}
         </div>
       )}
+    </ClubSection>
+  );
+}
 
-      {/* ── Info Tab ──────────────────────────────────────────────────────── */}
-      {tab === 'info' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6">
-          <h3 className="text-sm font-semibold text-slate-700 mb-4">Thông tin chi tiết</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[
-              { label: 'Tên CLB', value: club.name },
-              { label: 'Trạng thái', value: clubStatusDisplay },
-              { label: 'Danh mục', value: club.category || 'N/A' },
-              { label: 'Ngày thành lập', value: club.establishedDate ? formatDate(club.establishedDate) : 'N/A' },
-              { label: 'Số thành viên', value: members.length },
-              { label: 'Số sự kiện', value: events.length },
-            ].map(({ label, value }) => (
-              <div key={label} className="p-4 rounded-xl bg-slate-50">
-                <p className="text-xs text-slate-400 mb-1">{label}</p>
-                <p className="text-sm font-semibold text-slate-700">{value}</p>
-              </div>
-            ))}
-          </div>
+function ReportsPanel({ query, reports }: { query: ReturnType<typeof useQuery>; reports: ActivityReport[] }) {
+  if (query.isLoading) return <ClubMembersSkeleton />;
+  if (query.isError) return <ClubErrorState message="Không thể tải báo cáo của CLB." onRetry={() => void query.refetch()} />;
+  return (
+    <ClubSection title="Báo cáo gần đây" description="Chỉ hiển thị bản xem trước; workflow báo cáo không thay đổi." action={<Link className="club-section-link" to="/reports">Mở trang báo cáo</Link>}>
+      {reports.length === 0 ? <ClubEmptyState title="Chưa có báo cáo" description="CLB chưa có báo cáo để hiển thị." /> : (
+        <div className="club-report-list">
+          {reports.slice(0, 6).map((report) => (
+            <article key={report.id}>
+              <ClipboardCheck size={19} aria-hidden="true" />
+              <div><h3>{report.title}</h3><p>{formatDate(report.createdAt)}</p></div>
+              <Badge className={getStatusColor(String(report.status))}>{ReportStatusMap[report.status] ?? String(report.status)}</Badge>
+            </article>
+          ))}
         </div>
       )}
-
-      {/* ── Create Event Modal ─────────────────────────────────────────────── */}
-      <Modal
-        isOpen={showCreateEvent}
-        onClose={() => { setShowCreateEvent(false); reset(); }}
-        title="Tạo sự kiện mới"
-      >
-        <form onSubmit={handleSubmit(d => createEventMutation.mutate(d))} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Tên sự kiện * <span className="text-xs text-slate-400 font-normal">(3 - 200 ký tự)</span>
-            </label>
-            <input
-              {...register('title', {
-                required: 'Vui lòng nhập tên sự kiện',
-                minLength: { value: 3, message: 'Tối thiểu 3 ký tự' },
-                maxLength: { value: 200, message: 'Tối đa 200 ký tự' },
-              })}
-              className="input-field"
-              placeholder="VD: Hội nghị CLB..."
-            />
-            {errors.title && <p className="text-red-500 text-xs mt-1">{errors.title.message}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Mô tả * <span className="text-xs text-slate-400 font-normal">(tối đa 1000 ký tự)</span>
-            </label>
-            <textarea
-              {...register('description', {
-                required: 'Vui lòng nhập mô tả',
-                maxLength: { value: 1000, message: 'Tối đa 1000 ký tự' },
-              })}
-              rows={3}
-              className="input-field resize-none"
-              placeholder="Mô tả chi tiết nội dung sự kiện..."
-            />
-            {errors.description && <p className="text-red-500 text-xs mt-1">{errors.description.message}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Ngày & Giờ dự kiến *
-            </label>
-            <input
-              {...register('expectedDate', { required: 'Vui lòng chọn ngày' })}
-              type="datetime-local"
-              className="input-field"
-            />
-            {errors.expectedDate && <p className="text-red-500 text-xs mt-1">{errors.expectedDate.message}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">
-              Địa điểm * <span className="text-xs text-slate-400 font-normal">(tối đa 250 ký tự)</span>
-            </label>
-            <input
-              {...register('location', {
-                required: 'Vui lòng nhập địa điểm',
-                maxLength: { value: 250, message: 'Tối đa 250 ký tự' },
-              })}
-              className="input-field"
-              placeholder="Phòng học, hội trường..."
-            />
-            {errors.location && <p className="text-red-500 text-xs mt-1">{errors.location.message}</p>}
-          </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" type="button" onClick={() => { setShowCreateEvent(false); reset(); }}>Hủy</Button>
-            <Button type="submit" loading={createEventMutation.isPending}>Tạo sự kiện</Button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ── Edit Event Modal ───────────────────────────────────────────────── */}
-      <Modal
-        isOpen={!!editEventTarget}
-        onClose={() => { setEditEventTarget(null); reset(); }}
-        title="Chỉnh sửa sự kiện"
-      >
-        <form onSubmit={handleSubmit(d => updateEventMutation.mutate(d))} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Tên sự kiện *</label>
-            <input {...register('title', { required: true, minLength: 3, maxLength: 200 })} className="input-field" />
-            {errors.title && <p className="text-red-500 text-xs mt-1">Tên phải từ 3-200 ký tự</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả *</label>
-            <textarea {...register('description', { required: true, maxLength: 1000 })} rows={3} className="input-field resize-none" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Ngày & Giờ dự kiến *</label>
-            <input {...register('expectedDate', { required: true })} type="datetime-local" className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Địa điểm *</label>
-            <input {...register('location', { required: true, maxLength: 250 })} className="input-field" />
-          </div>
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" type="button" onClick={() => { setEditEventTarget(null); reset(); }}>Hủy</Button>
-            <Button type="submit" loading={updateEventMutation.isPending}>Cập nhật</Button>
-          </div>
-        </form>
-      </Modal>
-    </div>
+    </ClubSection>
   );
+}
+
+function EventForm({
+  form,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  form: ReturnType<typeof useForm<EventFormValues>>;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (values: EventFormValues) => void;
+}) {
+  const { register, handleSubmit, formState: { errors } } = form;
+  return (
+    <form className="club-form" onSubmit={handleSubmit(onSubmit)}>
+      <label>Tên sự kiện<input {...register('title', { required: 'Vui lòng nhập tên sự kiện.', minLength: { value: 3, message: 'Tối thiểu 3 ký tự.' }, maxLength: { value: 200, message: 'Tối đa 200 ký tự.' } })} />{errors.title && <span role="alert">{errors.title.message}</span>}</label>
+      <label>Mô tả<textarea rows={4} {...register('description', { required: 'Vui lòng nhập mô tả.', maxLength: { value: 1000, message: 'Tối đa 1000 ký tự.' } })} />{errors.description && <span role="alert">{errors.description.message}</span>}</label>
+      <label>Ngày và giờ dự kiến<input type="datetime-local" {...register('expectedDate', { required: 'Vui lòng chọn ngày.' })} />{errors.expectedDate && <span role="alert">{errors.expectedDate.message}</span>}</label>
+      <label>Địa điểm<input {...register('location', { required: 'Vui lòng nhập địa điểm.', maxLength: { value: 250, message: 'Tối đa 250 ký tự.' } })} />{errors.location && <span role="alert">{errors.location.message}</span>}</label>
+      <div><Button type="button" variant="outline" onClick={onCancel}>Hủy</Button><Button type="submit" loading={pending}>Lưu sự kiện</Button></div>
+    </form>
+  );
+}
+
+function ClubMembersSkeleton() {
+  return <div className="club-section" role="status" aria-label="Đang tải dữ liệu"><Skeleton className="h-5 w-40 bg-slate-200" /><Skeleton className="mt-5 h-20 w-full bg-slate-200" /><Skeleton className="mt-3 h-20 w-full bg-slate-200" /></div>;
 }

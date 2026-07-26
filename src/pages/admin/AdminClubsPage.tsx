@@ -1,212 +1,184 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus, Building2, Edit2, Trash2 } from 'lucide-react';
+import { useState } from 'react';
+import { Navigate, Link } from 'react-router-dom';
+import { useForm } from 'react-hook-form';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Edit2, ExternalLink, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { clubApi } from '../../api/club.api';
-import { Badge } from '../../components/ui/Badge';
+import {
+  ClubEmptyState,
+  ClubErrorState,
+  ClubGridSkeleton,
+  ClubLogo,
+  ClubStatusBadge,
+  ConfirmDialog,
+} from '../../components/clubs/ClubPrimitives';
 import { Button } from '../../components/ui/Button';
-import { PageSpinner, EmptyState } from '../../components/ui/Spinner';
 import { Modal } from '../../components/ui/Modal';
-import { getStatusColor, formatDate } from '../../utils';
-import { useForm } from 'react-hook-form';
-import type { Club } from '../../types';
+import { useGsapReveal } from '../../hooks/useGsapReveal';
 import { useAuthStore } from '../../stores/authStore';
-import { ClubStatusMap, ClubStatusLabel } from '../../types';
-import { Navigate } from 'react-router-dom';
+import type { Club, CreateClubRequest } from '../../types';
+import { ClubStatusMap } from '../../types';
+import { getApiError } from '../../utils';
+
+interface ClubFormValues {
+  name: string;
+  description: string;
+  logoUrl: string;
+  status: string;
+}
 
 export default function AdminClubsPage() {
-  const { user } = useAuthStore();
-  const qc = useQueryClient();
-  const [showCreate, setShowCreate] = useState(false);
+  const user = useAuthStore((state) => state.user);
+  const queryClient = useQueryClient();
+  const [formMode, setFormMode] = useState<'create' | 'edit' | null>(null);
   const [editTarget, setEditTarget] = useState<Club | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Club | null>(null);
+  const scopeRef = useGsapReveal<HTMLDivElement>({ animationKey: 'admin-clubs' });
+  const form = useForm<ClubFormValues>();
+  const isAdmin = user?.role === 'StudentAffairsAdmin';
 
-  // Route Guard: Only Admin & Advisor are allowed
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
-  if (!isAdmin) {
-    return <Navigate to="/dashboard" replace />;
+  const clubsQuery = useQuery({
+    queryKey: ['clubs'],
+    queryFn: clubApi.getAll,
+    enabled: isAdmin,
+  });
+  const clubs = clubsQuery.data?.data.data ?? [];
+
+  const invalidateClubs = () => queryClient.invalidateQueries({ queryKey: ['clubs'] });
+  const createMutation = useMutation({
+    mutationFn: (values: ClubFormValues) => clubApi.create(toClubPayload(values)),
+    onSuccess: async () => {
+      toast.success('Tạo câu lạc bộ thành công.');
+      closeForm();
+      await invalidateClubs();
+    },
+    onError: (error) => toast.error(getApiError(error, 'Không thể tạo câu lạc bộ.')),
+  });
+  const updateMutation = useMutation({
+    mutationFn: async (values: ClubFormValues) => {
+      if (!editTarget) return;
+      await clubApi.update(editTarget.id, toClubPayload(values));
+      const nextStatus = Number(values.status);
+      const currentStatus = normalizeStatusNumber(editTarget.status);
+      if (nextStatus !== currentStatus) await clubApi.review(editTarget.id, nextStatus);
+    },
+    onSuccess: async () => {
+      toast.success('Cập nhật câu lạc bộ thành công.');
+      closeForm();
+      await invalidateClubs();
+    },
+    onError: (error) => toast.error(getApiError(error, 'Không thể cập nhật câu lạc bộ.')),
+  });
+  const reviewMutation = useMutation({
+    mutationFn: ({ clubId, status }: { clubId: string; status: number }) => clubApi.review(clubId, status),
+    onSuccess: async () => { toast.success('Đã cập nhật trạng thái câu lạc bộ.'); await invalidateClubs(); },
+    onError: (error) => toast.error(getApiError(error, 'Không thể cập nhật trạng thái.')),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (clubId: string) => clubApi.delete(clubId),
+    onSuccess: async () => {
+      toast.success('Đã thực hiện xóa mềm câu lạc bộ.');
+      setDeleteTarget(null);
+      await invalidateClubs();
+    },
+    onError: (error) => toast.error(getApiError(error, 'Không thể xóa câu lạc bộ.')),
+  });
+
+  function closeForm() {
+    setFormMode(null);
+    setEditTarget(null);
+    form.reset();
   }
 
-  const { data: res, isLoading } = useQuery({ queryKey: ['clubs'], queryFn: () => clubApi.getAll() });
-  const clubs: Club[] = res?.data?.data ?? [];
-
-  const deleteMutation = useMutation({
-    id: 'delete-club',
-    mutationFn: (id: string) => clubApi.delete(id),
-    onSuccess: () => { toast.success('Đã tạm ngưng/xóa CLB'); qc.invalidateQueries({ queryKey: ['clubs'] }); },
-    onError: () => toast.error('Không thể thực hiện'),
-  } as any);
-
-  const reviewMutation = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: number }) => clubApi.review(id, status),
-    onSuccess: (_, variables) => {
-      toast.success(variables.status === 1 ? 'Phê duyệt CLB thành công!' : 'Thay đổi trạng thái CLB thành công.');
-      qc.invalidateQueries({ queryKey: ['clubs'] });
-    },
-    onError: () => toast.error('Có lỗi xảy ra khi duyệt CLB'),
-  });
-
-  const { register, handleSubmit, reset, setValue } = useForm<{
-    name: string; description: string; logoUrl: string; status: string;
-  }>();
-
-  const createMutation = useMutation({
-    mutationFn: (d: any) => clubApi.create({
-      name: d.name,
-      description: d.description,
-      logoUrl: d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null,
-      advisorId: user?.id || "22222222-2222-2222-2222-222222222222"
-    }),
-    onSuccess: () => { toast.success('Tạo CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setShowCreate(false); reset(); },
-    onError: () => toast.error('Không thể tạo CLB'),
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: async (d: any) => {
-      const logo = d.logoUrl && d.logoUrl.trim().startsWith('http') ? d.logoUrl.trim() : null;
-      await clubApi.update(editTarget!.id, {
-        name: d.name,
-        description: d.description,
-        logoUrl: logo
-      });
-
-      // Update status if changed via review endpoint
-      const newStatusVal = parseInt(d.status);
-      const oldStatusVal = typeof editTarget!.status === 'number' ? editTarget!.status : 0;
-      if (newStatusVal !== oldStatusVal) {
-        await clubApi.review(editTarget!.id, newStatusVal);
-      }
-    },
-    onSuccess: () => { toast.success('Cập nhật CLB thành công!'); qc.invalidateQueries({ queryKey: ['clubs'] }); setEditTarget(null); reset(); },
-    onError: () => toast.error('Không thể cập nhật CLB'),
-  });
-
-  const openEdit = (club: Club) => {
+  function openEdit(club: Club) {
     setEditTarget(club);
-    setValue('name', club.name);
-    setValue('description', club.description);
-    setValue('logoUrl', club.logoUrl || '');
-    setValue('status', String(club.status));
-  };
+    form.reset({
+      name: club.name,
+      description: club.description,
+      logoUrl: club.logoUrl ?? '',
+      status: String(normalizeStatusNumber(club.status)),
+    });
+    setFormMode('edit');
+  }
 
-  if (isLoading) return <PageSpinner />;
+  if (!isAdmin) return <Navigate to="/dashboard" replace />;
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div ref={scopeRef} className="admin-clubs-page">
+      <header className="clubs-header" data-gsap-item>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Quản lý Câu lạc bộ</h1>
-          <p className="text-slate-500 text-sm mt-1">{clubs.length} CLB trong hệ thống</p>
+          <p className="clubs-eyebrow">Administration</p>
+          <h1>Quản lý câu lạc bộ</h1>
+          <p>Tạo, cập nhật và kiểm soát trạng thái theo workflow hiện có.</p>
         </div>
-        <Button icon={<Plus size={16} />} onClick={() => setShowCreate(true)}>Tạo CLB mới</Button>
-      </div>
+        <Link className="clubs-admin-link" to="/admin/club-applications">Duyệt đơn thành lập CLB</Link>
+      </header>
 
-      {clubs.length === 0 ? (
-        <EmptyState icon={<Building2 size={48} />} title="Chưa có CLB nào"
-          action={<Button icon={<Plus size={16} />} onClick={() => setShowCreate(true)}>Tạo CLB đầu tiên</Button>} />
+      {clubsQuery.isLoading ? <ClubGridSkeleton count={3} /> : clubsQuery.isError ? (
+        <ClubErrorState message="Không thể tải danh sách quản trị CLB." onRetry={() => void clubsQuery.refetch()} />
+      ) : clubs.length === 0 ? (
+        <ClubEmptyState title="Chưa có câu lạc bộ" description="CLB sẽ xuất hiện sau khi Admin duyệt đơn thành lập của sinh viên." />
       ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">CLB</th>
-                  <th className="px-6 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Trạng thái</th>
-                  <th className="px-6 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Thao tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {clubs.map(club => {
-                  const statusName = ClubStatusMap[club.status] ?? String(club.status);
-                  const isPending = club.status === 0 || club.status === 'PendingApproval';
-                  return (
-                    <tr key={club.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-6 py-4">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
-                            {club.name.charAt(0)}
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-800">{club.name}</p>
-                            <p className="text-xs text-slate-400 line-clamp-1 max-w-lg">{club.description}</p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <Badge className={getStatusColor(statusName)}>{statusName}</Badge>
-                      </td>
-                      <td className="px-6 py-4">
-                        <div className="flex items-center justify-end gap-2">
-                          {isPending && (
-                            <>
-                              <button onClick={() => reviewMutation.mutate({ id: club.id, status: 1 })}
-                                disabled={reviewMutation.isPending}
-                                className="text-xs font-semibold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                                Duyệt
-                              </button>
-                              <button onClick={() => reviewMutation.mutate({ id: club.id, status: 3 })}
-                                disabled={reviewMutation.isPending}
-                                className="text-xs font-semibold text-red-500 bg-red-50 hover:bg-red-100 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50">
-                                Từ chối
-                              </button>
-                            </>
-                          )}
-                          <button onClick={() => openEdit(club)}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all">
-                            <Edit2 size={15} />
-                          </button>
-                          <button onClick={() => deleteMutation.mutate(club.id)}
-                            className="w-8 h-8 flex items-center justify-center rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all">
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+        <div className="admin-club-list" data-gsap-item>
+          {clubs.map((club) => {
+            const pending = ClubStatusMap[club.status] === 'PendingApproval';
+            return (
+              <article key={club.id}>
+                <ClubLogo club={club} size="sm" />
+                <div className="admin-club-list__identity"><h2>{club.name}</h2><p>{club.description || 'Chưa có mô tả.'}</p></div>
+                <ClubStatusBadge status={club.status} />
+                <div className="admin-club-list__actions">
+                  {pending && (
+                    <>
+                      <Button size="sm" variant="outline" loading={reviewMutation.isPending} onClick={() => reviewMutation.mutate({ clubId: club.id, status: 3 })}>Không duyệt</Button>
+                      <Button size="sm" loading={reviewMutation.isPending} onClick={() => reviewMutation.mutate({ clubId: club.id, status: 1 })}>Duyệt</Button>
+                    </>
+                  )}
+                  <Link to={`/clubs/${club.id}`} aria-label={`Xem ${club.name}`}><ExternalLink size={17} aria-hidden="true" /></Link>
+                  <button type="button" onClick={() => openEdit(club)} aria-label={`Chỉnh sửa ${club.name}`}><Edit2 size={17} aria-hidden="true" /></button>
+                  <button type="button" onClick={() => setDeleteTarget(club)} aria-label={`Xóa ${club.name}`}><Trash2 size={17} aria-hidden="true" /></button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
 
-      {/* Create/Edit Modal */}
-      <Modal
-        isOpen={showCreate || !!editTarget}
-        onClose={() => { setShowCreate(false); setEditTarget(null); reset(); }}
-        title={editTarget ? 'Chỉnh sửa CLB' : 'Tạo CLB mới'}
-      >
-        <form onSubmit={handleSubmit(d => editTarget ? updateMutation.mutate(d) : createMutation.mutate(d))} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Tên CLB</label>
-            <input {...register('name', { required: true })} className="input-field" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Mô tả</label>
-            <textarea {...register('description')} rows={3} className="input-field resize-none" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">URL Logo</label>
-            <input {...register('logoUrl')} className="input-field" placeholder="https://..." />
-          </div>
-          {editTarget && (
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Trạng thái</label>
-              <select {...register('status')} className="input-field">
-                <option value="0">Chờ duyệt (PendingApproval)</option>
-                <option value="1">Hoạt động (Active)</option>
-                <option value="2">Tạm dừng (Suspended)</option>
-                <option value="3">Giải thể (Inactive)</option>
-              </select>
-            </div>
+      <Modal isOpen={formMode !== null} onClose={closeForm} title={formMode === 'edit' ? 'Chỉnh sửa câu lạc bộ' : 'Tạo câu lạc bộ'}>
+        <form className="club-form" onSubmit={form.handleSubmit((values) => formMode === 'edit' ? updateMutation.mutate(values) : createMutation.mutate(values))}>
+          <label>Tên câu lạc bộ<input {...form.register('name', { required: 'Vui lòng nhập tên câu lạc bộ.' })} />{form.formState.errors.name && <span role="alert">{form.formState.errors.name.message}</span>}</label>
+          <label>Mô tả<textarea rows={4} {...form.register('description')} /></label>
+          <label>URL logo<input type="url" placeholder="https://..." {...form.register('logoUrl')} /></label>
+          {formMode === 'edit' && (
+            <label>Trạng thái<select {...form.register('status')}>
+              <option value="0">Chờ duyệt</option><option value="1">Hoạt động</option><option value="2">Tạm dừng</option><option value="3">Không hoạt động</option>
+            </select></label>
           )}
-          <div className="flex justify-end gap-3 pt-2">
-            <Button variant="outline" type="button" onClick={() => { setShowCreate(false); setEditTarget(null); reset(); }}>Hủy</Button>
-            <Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>
-              {editTarget ? 'Cập nhật' : 'Tạo CLB'}
-            </Button>
-          </div>
+          <div><Button type="button" variant="outline" onClick={closeForm}>Hủy</Button><Button type="submit" loading={createMutation.isPending || updateMutation.isPending}>Lưu câu lạc bộ</Button></div>
         </form>
       </Modal>
+
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Xóa câu lạc bộ"
+        description={`Thao tác này gọi endpoint xóa mềm hiện có cho ${deleteTarget?.name ?? 'câu lạc bộ này'}.`}
+        confirmLabel="Xác nhận xóa"
+        pending={deleteMutation.isPending}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={() => deleteTarget && deleteMutation.mutate(deleteTarget.id)}
+      />
     </div>
   );
+}
+
+function toClubPayload(values: ClubFormValues): CreateClubRequest {
+  const logoUrl = values.logoUrl.trim();
+  return { name: values.name.trim(), description: values.description.trim(), logoUrl: logoUrl || null };
+}
+
+function normalizeStatusNumber(status: Club['status']) {
+  if (typeof status === 'number') return status;
+  const mapping: Record<string, number> = { PendingApproval: 0, Active: 1, Suspended: 2, Inactive: 3 };
+  return mapping[status] ?? 0;
 }

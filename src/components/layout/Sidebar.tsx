@@ -1,143 +1,241 @@
-import React from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useLayoutEffect, useRef } from 'react';
+import { NavLink } from 'react-router-dom';
 import {
-  LayoutDashboard, Shield, Calendar, ClipboardList, Building2, ChevronRight, Bell, LogOut
+  Banknote,
+  Bell,
+  Building2,
+  Calendar,
+  ChevronRight,
+  ClipboardList,
+  LayoutDashboard,
+  LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ShieldCheck,
+  Trophy,
+  Users,
 } from 'lucide-react';
-import { useAuthStore } from '../../stores/authStore';
-import { cn, getRoleLabel } from '../../utils';
 import { useQuery } from '@tanstack/react-query';
-import { notificationApi } from '../../api/notification.api';
+import { useAuthStore } from '../../stores/authStore';
+import { clubApi } from '../../api/club.api';
+import { cn, getRoleLabel } from '../../utils';
+import { Avatar } from '../ui/Avatar';
+import { IconButton } from '../ui/IconButton';
+import { Tooltip } from '../ui/Tooltip';
+import { gsap } from '../../lib/gsap';
+import { useReducedMotion } from '../../hooks/useReducedMotion';
 
 interface NavItem {
   label: string;
   to: string;
   icon: React.ReactNode;
   roles?: string[];
+  capability?: 'leader' | 'treasurer';
 }
 
-const navItems: NavItem[] = [
-  { label: 'Dashboard', to: '/dashboard', icon: <LayoutDashboard size={18} /> },
-  { label: 'Câu lạc bộ', to: '/clubs', icon: <Building2 size={18} /> },
-  { label: 'Lịch hoạt động', to: '/events', icon: <Calendar size={18} /> },
-  { label: 'Báo cáo', to: '/reports', icon: <ClipboardList size={18} />, roles: ['ClubManager', 'Admin', 'Advisor'] },
-  { label: 'Thông báo', to: '/notifications', icon: <Bell size={18} /> },
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const navigationGroups: NavGroup[] = [
+  {
+    label: 'Tổng quan',
+    items: [
+      { label: 'Dashboard', to: '/dashboard', icon: <LayoutDashboard size={19} /> },
+      { label: 'Thông báo', to: '/notifications', icon: <Bell size={19} /> },
+    ],
+  },
+  {
+    label: 'Quản lý câu lạc bộ',
+    items: [
+      { label: 'Câu lạc bộ', to: '/clubs', icon: <Building2 size={19} /> },
+      { label: 'Đăng ký thành lập CLB', to: '/club-applications', icon: <ClipboardList size={19} />, roles: ['Student'] },
+      { label: 'Lịch hoạt động', to: '/events', icon: <Calendar size={19} /> },
+      { label: 'KPI & Semester', to: '/kpi', icon: <Trophy size={19} /> },
+    ],
+  },
+  {
+    label: 'Báo cáo & tài chính',
+    items: [
+      {
+        label: 'Báo cáo',
+        to: '/reports',
+        icon: <ClipboardList size={19} />,
+        capability: 'leader',
+      },
+      {
+        label: 'Tài chính',
+        to: '/finance',
+        icon: <Banknote size={19} />,
+        capability: 'treasurer',
+      },
+    ],
+  },
 ];
 
-const adminItems: NavItem[] = [
-  { label: 'Quản lý CLB', to: '/admin/clubs', icon: <Building2 size={18} /> },
-  { label: 'Duyệt báo cáo', to: '/admin/reports', icon: <ClipboardList size={18} /> },
-];
+const adminGroup: NavGroup = {
+  label: 'Quản trị',
+  items: [
+    { label: 'Quản lý người dùng', to: '/admin/users', icon: <Users size={19} /> },
+    { label: 'Quản lý CLB', to: '/admin/clubs', icon: <Building2 size={19} /> },
+    { label: 'Duyệt đơn thành lập CLB', to: '/admin/club-applications', icon: <ShieldCheck size={19} /> },
+    { label: 'Duyệt báo cáo', to: '/admin/reports', icon: <ClipboardList size={19} /> },
+  ],
+};
 
-export function Sidebar() {
-  const { user, logout } = useAuthStore();
-  const navigate = useNavigate();
-  const isAdmin = user?.role === 'Admin' || user?.role === 'Advisor';
+interface SidebarProps {
+  collapsed?: boolean;
+  mobile?: boolean;
+  onToggle?: () => void;
+  onNavigate?: () => void;
+  onLogout: () => void;
+}
 
-  const { data: notifRes } = useQuery({
-    queryKey: ['notifications'],
-    queryFn: () => notificationApi.getMyNotifications(),
-    enabled: !!user,
+export function Sidebar({
+  collapsed = false,
+  mobile = false,
+  onToggle,
+  onNavigate,
+  onLogout,
+}: SidebarProps) {
+  const user = useAuthStore((state) => state.user);
+  const isAdmin = user?.role === 'StudentAffairsAdmin';
+  const scopeRef = useRef<HTMLElement>(null);
+  const reducedMotion = useReducedMotion();
+
+  const membershipsQuery = useQuery({
+    queryKey: ['my-memberships', user?.id],
+    queryFn: () => clubApi.getMyMemberships(),
+    enabled: Boolean(user),
   });
-
-  const notifications = notifRes?.data?.data ?? [];
-  const unreadCount = notifications.filter((n: any) => !n.isRead).length;
-
-  const handleLogout = () => {
-    logout();
-    navigate('/login');
-  };
-
-  const filteredNav = navItems.filter(item =>
-    !item.roles || !user || item.roles.includes(user.role)
+  const memberships = membershipsQuery.data?.data.data ?? [];
+  const hasLeaderRole = memberships.some(
+    (membership) => Number(membership.role) === 2 && Number(membership.status) === 1,
+  );
+  const hasTreasurerRole = memberships.some(
+    (membership) => Number(membership.role) === 3 && Number(membership.status) === 1,
   );
 
+  const visibleGroups = [
+    ...navigationGroups.map((group) => ({
+      ...group,
+      items: group.items.filter(
+        (item) =>
+          (!item.roles || !user || item.roles.includes(user.role)) &&
+          (!item.capability ||
+            isAdmin ||
+            (item.capability === 'leader' ? hasLeaderRole : hasTreasurerRole)),
+      ),
+    })),
+    ...(isAdmin ? [adminGroup] : []),
+  ].filter((group) => group.items.length > 0);
+
+  useLayoutEffect(() => {
+    const scope = scopeRef.current;
+    if (!scope) return;
+    const context = gsap.context(() => {
+      const groups = scope.querySelectorAll('[data-nav-group]');
+      if (reducedMotion) {
+        gsap.set([scope, ...groups], { autoAlpha: 1, x: 0 });
+        return;
+      }
+      gsap.fromTo(scope, { autoAlpha: 0, x: -8 }, { autoAlpha: 1, x: 0, duration: 0.38, ease: 'power2.out' });
+      gsap.fromTo(
+        groups,
+        { autoAlpha: 0, x: -5 },
+        { autoAlpha: 1, x: 0, duration: 0.3, stagger: 0.04, ease: 'power2.out', delay: 0.05 },
+      );
+    }, scope);
+    return () => context.revert();
+  }, [reducedMotion]);
+
   return (
-    <aside className="w-64 bg-gradient-to-b from-slate-900 to-slate-800 flex flex-col h-screen shadow-2xl flex-shrink-0">
-      {/* Logo */}
-      <div className="px-6 py-5 border-b border-slate-700/50">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
-            <Shield size={18} className="text-white" />
-          </div>
-          <div>
-            <h1 className="text-white font-bold text-sm leading-tight">FPTU Club</h1>
-            <p className="text-slate-400 text-xs">Report System</p>
-          </div>
+    <aside
+      ref={scopeRef}
+      className={cn(
+        'app-sidebar',
+        collapsed && !mobile ? 'app-sidebar--collapsed' : 'app-sidebar--expanded',
+        mobile && 'h-full w-full',
+      )}
+      aria-label="Điều hướng chính"
+    >
+      <div className="app-sidebar__brand">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-[var(--radius-lg)] border border-indigo-300/20 bg-indigo-400/15 text-indigo-200">
+          <ShieldCheck size={22} aria-hidden="true" />
         </div>
-      </div>
-
-      {/* User Profile */}
-      <div className="px-4 py-4 border-b border-slate-700/50">
-        <div className="flex items-center gap-3 px-2 py-2 rounded-xl bg-slate-700/40">
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
-            {user?.fullName?.charAt(0) ?? 'U'}
+        {(!collapsed || mobile) && (
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold tracking-tight text-white">FPTU Club Report</p>
+            <p className="truncate text-xs text-[var(--color-text-subtle)]">Management System</p>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-white text-sm font-medium truncate">{user?.fullName ?? 'User'}</p>
-            <p className="text-slate-400 text-xs">{getRoleLabel(user?.role ?? '')}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-        {filteredNav.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) => cn(
-              'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group',
-              isActive
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/30'
-                : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
-            )}
-          >
-            {item.icon}
-            <span className="flex-1">{item.label}</span>
-            {item.to === '/notifications' && unreadCount > 0 && (
-              <span className="inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full">
-                {unreadCount}
-              </span>
-            )}
-            <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-          </NavLink>
-        ))}
-
-        {isAdmin && (
-          <>
-            <div className="pt-4 pb-2 px-3">
-              <p className="text-slate-500 text-xs font-semibold uppercase tracking-wider">Quản trị</p>
-            </div>
-            {adminItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 group',
-                  isActive
-                    ? 'bg-violet-600 text-white shadow-lg shadow-violet-900/30'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/60'
-                )}
-              >
-                {item.icon}
-                <span className="flex-1">{item.label}</span>
-                <ChevronRight size={14} className="opacity-0 group-hover:opacity-100 transition-opacity" />
-              </NavLink>
-            ))}
-          </>
         )}
+        {!mobile && (
+          <IconButton
+            label={collapsed ? 'Mở rộng thanh điều hướng' : 'Thu gọn thanh điều hướng'}
+            size="sm"
+            onClick={onToggle}
+            className={cn('ml-auto', collapsed && 'absolute -right-4 top-5 border border-[var(--color-border)] bg-[var(--color-surface-elevated)] shadow-lg')}
+          >
+            {collapsed ? <PanelLeftOpen size={18} aria-hidden="true" /> : <PanelLeftClose size={18} aria-hidden="true" />}
+          </IconButton>
+        )}
+      </div>
+
+      <nav className="app-sidebar__nav">
+        {visibleGroups.map((group) => (
+          <section key={group.label} data-nav-group>
+            {(!collapsed || mobile) && <h2 className="app-sidebar__group-label">{group.label}</h2>}
+            <div className="grid gap-1">
+              {group.items.map((item) => {
+                const link = (
+                  <NavLink
+                    to={item.to}
+                    onClick={onNavigate}
+                    aria-label={collapsed && !mobile ? item.label : undefined}
+                    className={({ isActive }) => cn('app-nav-item', isActive && 'app-nav-item--active')}
+                  >
+                    <span className="app-nav-item__icon">{item.icon}</span>
+                    {(!collapsed || mobile) && <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+                    {(!collapsed || mobile) && <ChevronRight size={15} className="app-nav-item__chevron" aria-hidden="true" />}
+                  </NavLink>
+                );
+                return (
+                  <Tooltip key={item.to} label={item.label} disabled={!collapsed || mobile}>
+                    {link}
+                  </Tooltip>
+                );
+              })}
+            </div>
+          </section>
+        ))}
       </nav>
 
-      {/* Logout */}
-      <div className="px-3 py-4 border-t border-slate-700/50">
-        <button
-          onClick={handleLogout}
-          className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-red-400 hover:bg-red-500/10 transition-all duration-150"
-        >
-          <LogOut size={18} />
-          <span>Đăng xuất</span>
-        </button>
-      </div>
+      {user && (
+        <div className="app-sidebar__footer">
+          <div className={cn('flex min-w-0 items-center gap-3', collapsed && !mobile && 'justify-center')}>
+            <Avatar name={user.fullName} />
+            {(!collapsed || mobile) && (
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-white">{user.fullName}</p>
+                <p className="truncate text-xs text-[var(--color-text-subtle)]">{getRoleLabel(user.role)}</p>
+              </div>
+            )}
+          </div>
+          {collapsed && !mobile ? (
+            <Tooltip label="Đăng xuất">
+              <IconButton label="Đăng xuất" onClick={onLogout} className="mx-auto text-rose-300 hover:bg-rose-400/10 hover:text-rose-200">
+                <LogOut size={18} aria-hidden="true" />
+              </IconButton>
+            </Tooltip>
+          ) : (
+            <button type="button" onClick={onLogout} className="app-sidebar__logout">
+              <LogOut size={18} aria-hidden="true" />
+              Đăng xuất
+            </button>
+          )}
+        </div>
+      )}
     </aside>
   );
 }

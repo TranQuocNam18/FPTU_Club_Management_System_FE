@@ -1,20 +1,25 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Shield, Eye, EyeOff, UserPlus } from 'lucide-react';
+import { UserPlus } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { authApi } from '../../api/auth.api';
 import { Button } from '../../components/ui/Button';
+import { Input } from '../../components/ui/Input';
+import { PasswordInput } from '../../components/ui/PasswordInput';
+import { FormField } from '../../components/ui/FormField';
+import { Alert } from '../../components/ui/Alert';
+import { AuthShell } from '../../components/auth/AuthShell';
+import { getApiError } from '../../utils';
 
 const schema = z.object({
-  fullName: z.string().min(3, 'Họ tên tối thiểu 3 ký tự'),
-  email: z.string().email('Email không hợp lệ'),
+  fullName: z.string().trim().min(3, 'Họ tên tối thiểu 3 ký tự'),
+  email: z.string().trim().min(1, 'Vui lòng nhập email').email('Email không hợp lệ'),
   password: z.string().min(6, 'Mật khẩu tối thiểu 6 ký tự'),
-  confirmPassword: z.string(),
-  role: z.enum(['Student', 'ClubManager', 'Admin', 'Advisor']),
-}).refine(d => d.password === d.confirmPassword, {
+  confirmPassword: z.string().min(1, 'Vui lòng xác nhận mật khẩu'),
+}).refine((data) => data.password === data.confirmPassword, {
   message: 'Mật khẩu xác nhận không khớp',
   path: ['confirmPassword'],
 });
@@ -22,114 +27,91 @@ type FormData = z.infer<typeof schema>;
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const [showPass, setShowPass] = useState(false);
-
-  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    defaultValues: { role: 'Student' },
-  });
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>({ resolver: zodResolver(schema), mode: 'onBlur' });
 
   const onSubmit = async (data: FormData) => {
+    setSubmitError(null);
     try {
-      await authApi.register({ email: data.email, password: data.password, fullName: data.fullName, role: data.role });
-      toast.success('Đăng ký thành công! Vui lòng đăng nhập.');
-      navigate('/login');
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message ?? 'Đăng ký thất bại');
+      await authApi.register(data);
+      toast.success('Đăng ký thành công. Vui lòng xác minh email.');
+      navigate(`/verify-email?email=${encodeURIComponent(data.email)}`);
+    } catch (error: unknown) {
+      setSubmitError(getApiError(error, 'Không thể tạo tài khoản. Vui lòng thử lại.'));
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 p-6">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-2xl mb-4 animate-pulse-ring">
-            <Shield size={28} className="text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Tạo tài khoản mới</h1>
-          <p className="text-slate-400 text-sm mt-1.5">FPTU Club Report System</p>
-        </div>
+    <AuthShell
+      eyebrow="Bắt đầu cùng FPTU Club"
+      title="Tạo tài khoản"
+      subtitle="Đăng ký để theo dõi hoạt động và tham gia cộng đồng câu lạc bộ."
+      footer={(
+        <p>
+          Đã có tài khoản?{' '}
+          <Link className="font-semibold text-indigo-300 hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-focus)]" to="/login">
+            Đăng nhập
+          </Link>
+        </p>
+      )}
+    >
+      <form onSubmit={handleSubmit(onSubmit)} className="grid gap-4" noValidate>
+        {submitError && <Alert title="Chưa thể tạo tài khoản" message={submitError} />}
 
-        <div className="bg-white rounded-3xl shadow-2xl p-8 animate-fadeIn border border-slate-100/50">
-          <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-4">
-            <div className="auth-input-group">
-              <label className="auth-label">Họ và tên</label>
-              <input
-                {...register('fullName')}
-                placeholder="Nguyễn Văn A"
-                className="auth-input"
-              />
-              {errors.fullName && <p className="text-red-500 text-xs mt-0.5">{errors.fullName.message}</p>}
-            </div>
+        <FormField id="register-name" label="Họ và tên" error={errors.fullName?.message} required>
+          <Input
+            id="register-name"
+            autoComplete="name"
+            placeholder="Nguyễn Văn A"
+            error={Boolean(errors.fullName)}
+            aria-describedby={errors.fullName ? 'register-name-error' : undefined}
+            {...register('fullName')}
+          />
+        </FormField>
 
-            <div className="auth-input-group">
-              <label className="auth-label">Email</label>
-              <input
-                {...register('email')}
-                type="email"
-                placeholder="your.name@fpt.edu.vn"
-                className="auth-input"
-              />
-              {errors.email && <p className="text-red-500 text-xs mt-0.5">{errors.email.message}</p>}
-            </div>
+        <FormField id="register-email" label="Email" error={errors.email?.message} required>
+          <Input
+            id="register-email"
+            type="email"
+            inputMode="email"
+            autoComplete="email"
+            placeholder="your.name@fpt.edu.vn"
+            error={Boolean(errors.email)}
+            aria-describedby={errors.email ? 'register-email-error' : undefined}
+            {...register('email')}
+          />
+        </FormField>
 
-            <div className="auth-input-group">
-              <label className="auth-label">Vai trò</label>
-              <select
-                {...register('role')}
-                className="auth-input bg-white"
-              >
-                <option value="Student">Sinh viên</option>
-                <option value="ClubManager">Quản lý CLB</option>
-                <option value="Advisor">Cố vấn</option>
-                <option value="Admin">Quản trị viên</option>
-              </select>
-            </div>
+        <FormField id="register-password" label="Mật khẩu" error={errors.password?.message} hint="Tối thiểu 6 ký tự" required>
+          <PasswordInput
+            id="register-password"
+            autoComplete="new-password"
+            placeholder="Tạo mật khẩu"
+            error={Boolean(errors.password)}
+            aria-describedby={errors.password ? 'register-password-error' : 'register-password-hint'}
+            {...register('password')}
+          />
+        </FormField>
 
-            <div className="auth-input-group">
-              <label className="auth-label">Mật khẩu</label>
-              <div className="relative">
-                <input
-                  {...register('password')}
-                  type={showPass ? 'text' : 'password'}
-                  placeholder="••••••••"
-                  className="auth-input pr-11"
-                />
-                <button type="button" onClick={() => setShowPass(!showPass)} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 focus:outline-none">
-                  {showPass ? <EyeOff size={18} /> : <Eye size={18} />}
-                </button>
-              </div>
-              {errors.password && <p className="text-red-500 text-xs mt-0.5">{errors.password.message}</p>}
-            </div>
+        <FormField id="register-confirm-password" label="Xác nhận mật khẩu" error={errors.confirmPassword?.message} required>
+          <PasswordInput
+            id="register-confirm-password"
+            autoComplete="new-password"
+            placeholder="Nhập lại mật khẩu"
+            error={Boolean(errors.confirmPassword)}
+            aria-describedby={errors.confirmPassword ? 'register-confirm-password-error' : undefined}
+            {...register('confirmPassword')}
+          />
+        </FormField>
 
-            <div className="auth-input-group">
-              <label className="auth-label">Xác nhận mật khẩu</label>
-              <input
-                {...register('confirmPassword')}
-                type="password"
-                placeholder="••••••••"
-                className="auth-input"
-              />
-              {errors.confirmPassword && <p className="text-red-500 text-xs mt-0.5">{errors.confirmPassword.message}</p>}
-            </div>
-
-            <Button
-              type="submit"
-              loading={isSubmitting}
-              icon={<UserPlus size={16} />}
-              className="w-full py-3 mt-2 font-semibold"
-              size="lg"
-            >
-              Tạo tài khoản
-            </Button>
-          </form>
-
-          <p className="text-center text-sm text-slate-500 mt-5">
-            Đã có tài khoản?{' '}
-            <Link to="/login" className="text-indigo-600 font-semibold hover:underline">Đăng nhập</Link>
-          </p>
-        </div>
-      </div>
-    </div>
+        <Button type="submit" loading={isSubmitting} icon={<UserPlus size={18} aria-hidden="true" />} size="lg" className="mt-2 w-full">
+          {isSubmitting ? 'Đang tạo tài khoản' : 'Tạo tài khoản'}
+        </Button>
+      </form>
+    </AuthShell>
   );
 }

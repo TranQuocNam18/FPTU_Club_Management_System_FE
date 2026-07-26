@@ -1,73 +1,54 @@
-# React + TypeScript + Vite
+# FPTU Club Report System — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React 19, TypeScript strict, Vite, TanStack Query và SignalR client cho hệ thống quản lý câu lạc bộ FPTU.
 
-Currently, two official plugins are available:
+## Runtime profile
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+Sao chép `.env.example` thành `.env.local` khi cần tùy chỉnh:
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```env
+VITE_API_BASE_URL=http://localhost:5000
+VITE_SIGNALR_URL=http://localhost:5000/gateway/hubs/notification
+VITE_USE_MOCK_DATA=false
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Compliance profile luôn dùng `VITE_USE_MOCK_DATA=false`. Frontend chỉ gọi `/gateway/...`; không gọi trực tiếp port nội bộ của microservice và không fallback sang mock khi API lỗi.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Chạy local
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```powershell
+npm install
+npm run dev
+npm run build
 ```
+
+Backend stack phải chạy tại `http://localhost:5000`. Frontend dev server mặc định là `http://localhost:5173`.
+
+## Quyền và module
+
+- `StudentAffairsAdmin`: users, clubs, report/activity review, finance review, KPI/Semester và broadcast.
+- `ClubManager` + membership `ClubLeader`: membership approval, activity management, report submit/revision.
+- `ClubManager` + membership `Treasurer`: finance proposal, settlement, balance và transactions.
+- `Student`: club list/join, approved activities, notifications và dashboard.
+
+Access token chỉ giữ trong memory. Refresh token được persist để khôi phục phiên; refresh request được single-flight và refresh failure sẽ logout.
+
+## Flow chính
+
+1. Register → verify email → login.
+2. Student join club → ClubLeader approve.
+3. ClubLeader create/submit activity → admin review.
+4. ClubLeader create report theo Active Semester → revision/resubmit → admin approve.
+5. Treasurer create/submit proposal → admin approve → Treasurer settle bằng receipt URL.
+6. Admin quản lý KPI rule, manual adjustment và leaderboard theo Semester.
+7. Notification tải qua REST và nhận realtime qua SignalR Gateway.
+
+## Giới hạn đã biết
+
+- Receipt chỉ lưu URL/metadata, chưa upload file.
+- Real file upload/storage và export PDF/Excel chưa được triển khai.
+- Dashboard tổng hợp từ API hiện có; full Dashboard API/metric chưa có sẽ không được giả lập.
+- Redis là message broker, chưa phải application cache.
+- Major package upgrades, mixed database initialization refactor và consumer cho event không cần
+  trong core demo được deferred.
+- Bundle size warning và một số UI edge case được hoãn sang phase tối ưu.

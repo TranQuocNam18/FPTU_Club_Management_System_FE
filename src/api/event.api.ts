@@ -1,51 +1,61 @@
 import api from './axios';
 import type { ApiResponse, ClubEvent, CreateEventRequest } from '../types';
 
-// Helper: normalize event from BE (ExpectedDate → expectedDate, add display alias)
-const normalizeEvent = (e: any): any => ({
-  ...e,
-  expectedDate: e.expectedDate ?? e.ExpectedDate ?? e.startTime ?? new Date().toISOString(),
-});
+type RawEvent = Omit<ClubEvent, 'expectedDate'> & {
+  expectedDate?: string;
+  ExpectedDate?: string;
+};
+
+function normalizeEvent(event: RawEvent): ClubEvent {
+  return {
+    ...event,
+    expectedDate: event.expectedDate ?? event.ExpectedDate ?? '',
+  };
+}
+
+function normalizeResponse(response: { data: ApiResponse<RawEvent> }) {
+  return {
+    ...response,
+    data: { ...response.data, data: normalizeEvent(response.data.data) },
+  };
+}
 
 export const eventApi = {
-  getByClub: (clubId: string) =>
-    api.get<ApiResponse<any[]>>(`/gateway/events/club/${clubId}`).then(res => {
-      if (res.data?.data) {
-        res.data.data = res.data.data.map(normalizeEvent);
-      }
-      return res as any;
-    }),
+  getByClub: async (clubId: string) => {
+    const response = await api.get<ApiResponse<RawEvent[]>>(`/gateway/events/club/${clubId}`);
+    return {
+      ...response,
+      data: { ...response.data, data: response.data.data.map(normalizeEvent) },
+    };
+  },
 
-  create: (data: CreateEventRequest) => {
-    const payload = {
+  getById: async (id: string) => normalizeResponse(
+    await api.get<ApiResponse<RawEvent>>(`/gateway/events/${id}`),
+  ),
+
+  create: async (data: CreateEventRequest) => normalizeResponse(
+    await api.post<ApiResponse<RawEvent>>('/gateway/events', {
       ClubId: data.clubId,
       Title: data.title,
-      Description: data.description || 'Không có mô tả',
+      Description: data.description,
       ExpectedDate: data.expectedDate,
       Location: data.location,
-    };
-    return api.post<ApiResponse<any>>('/gateway/events', payload).then(res => {
-      if (res.data?.data) res.data.data = normalizeEvent(res.data.data);
-      return res as any;
-    });
-  },
+    }),
+  ),
 
-  update: (id: string, data: Partial<CreateEventRequest>) => {
-    const payload = {
+  update: async (id: string, data: Omit<CreateEventRequest, 'clubId'>) => normalizeResponse(
+    await api.put<ApiResponse<RawEvent>>(`/gateway/events/${id}`, {
       Title: data.title,
-      Description: data.description || 'Không có mô tả',
+      Description: data.description,
       ExpectedDate: data.expectedDate,
       Location: data.location,
-    };
-    return api.put<ApiResponse<any>>(`/gateway/events/${id}`, payload).then(res => {
-      if (res.data?.data) res.data.data = normalizeEvent(res.data.data);
-      return res as any;
-    });
-  },
+    }),
+  ),
 
-  cancel: (id: string) =>
-    api.delete<ApiResponse<null>>(`/gateway/events/${id}/cancel`),
-
-  deletePermanent: (id: string) =>
-    api.delete<ApiResponse<null>>(`/gateway/events/${id}/permanent`),
+  cancel: (id: string) => api.delete<ApiResponse<null>>(`/gateway/events/${id}/cancel`),
+  submit: (id: string) => api.put<ApiResponse<ClubEvent>>(`/gateway/events/${id}/submit`),
+  approve: (id: string) => api.put<ApiResponse<ClubEvent>>(`/gateway/events/${id}/approve`),
+  reject: (id: string) => api.put<ApiResponse<ClubEvent>>(`/gateway/events/${id}/reject`),
+  complete: (id: string) => api.put<ApiResponse<ClubEvent>>(`/gateway/events/${id}/complete`),
+  deletePermanent: (id: string) => api.delete<ApiResponse<null>>(`/gateway/events/${id}/permanent`),
 };

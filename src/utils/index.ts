@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { format, parseISO } from 'date-fns';
+import axios from 'axios';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -44,8 +45,7 @@ export function getStatusColor(status: string): string {
 
 export function getRoleLabel(role: string): string {
   const map: Record<string, string> = {
-    Admin: 'Quản trị viên',
-    Advisor: 'Cố vấn',
+    StudentAffairsAdmin: 'Cán bộ Phòng CTSV',
     ClubManager: 'Quản lý CLB',
     Student: 'Sinh viên',
     Leader: 'Chủ nhiệm',
@@ -57,4 +57,13 @@ export function getRoleLabel(role: string): string {
 
 export function truncate(str: string, max = 80) {
   return str.length > max ? str.slice(0, max) + '...' : str;
+}
+
+export function getApiError(error: unknown, fallback = 'Không thể thực hiện yêu cầu'): string {
+  if (!axios.isAxiosError(error)) return fallback;
+  const data = error.response?.data as {
+    message?: string;
+    errors?: Array<{ message?: string }>;
+  } | undefined;
+  return data?.errors?.[0]?.message ?? data?.message ?? fallback;
 }

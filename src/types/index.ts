@@ -3,8 +3,9 @@ export interface User {
   id: string;
   email: string;
   fullName: string;
-  role: 'Admin' | 'Advisor' | 'ClubManager' | 'Student';
+  role: 'StudentAffairsAdmin' | 'ClubManager' | 'Student';
   isActive: boolean;
+  isEmailVerified?: boolean;
 }
 
 export interface LoginRequest {
@@ -15,8 +16,8 @@ export interface LoginRequest {
 export interface RegisterRequest {
   email: string;
   password: string;
+  confirmPassword: string;
   fullName: string;
-  role: string;
 }
 
 export interface LoginResponse {
@@ -28,8 +29,37 @@ export interface LoginResponse {
 export interface ApiResponse<T> {
   data: T;
   message: string;
-  statusCode: number;
-  isSuccess: boolean;
+  success: boolean;
+  errors?: Array<{ code: string; field?: string | null; message: string }> | null;
+  meta?: Record<string, unknown> | null;
+  traceId?: string;
+}
+
+// ==================== SEMESTER ====================
+export type SemesterStatus = 'Draft' | 'Active' | 'Closed';
+
+export interface Semester {
+  id: string;
+  code: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: SemesterStatus;
+  createdAt: string;
+  updatedAt?: string | null;
+}
+
+export interface CreateSemesterRequest {
+  code: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+}
+
+export interface UpdateSemesterRequest {
+  name: string;
+  startDate: string;
+  endDate: string;
 }
 
 // ==================== CLUB ====================
@@ -75,7 +105,6 @@ export interface CreateClubRequest {
   name: string;
   description: string;
   logoUrl?: string | null;
-  advisorId: string;
 }
 
 export interface UpdateClubRequest {
@@ -84,23 +113,27 @@ export interface UpdateClubRequest {
   logoUrl?: string | null;
 }
 
-// ClubRole enum: Member=0, Manager=1, President=2
-export type ClubRoleEnum = 0 | 1 | 2;
+// ClubRole enum: Member=0, LegacyManager=1 (no authorization), ClubLeader=2, Treasurer=3
+export type ClubRoleEnum = 0 | 1 | 2 | 3;
 export const ClubRoleMap: Record<number | string, string> = {
   0: 'Member',
-  1: 'Manager',
-  2: 'President',
+  1: 'LegacyManager',
+  2: 'ClubLeader',
+  3: 'Treasurer',
   Member: 'Member',
-  Manager: 'Manager',
-  President: 'President',
+  LegacyManager: 'LegacyManager',
+  ClubLeader: 'ClubLeader',
+  Treasurer: 'Treasurer',
 };
 export const ClubRoleLabel: Record<number | string, string> = {
   0: 'Thành viên',
   1: 'Quản lý CLB',
   2: 'Chủ nhiệm',
   Member: 'Thành viên',
-  Manager: 'Quản lý CLB',
-  President: 'Chủ nhiệm',
+  3: 'Thủ quỹ',
+  LegacyManager: 'Legacy Manager',
+  ClubLeader: 'Chủ nhiệm',
+  Treasurer: 'Thủ quỹ',
 };
 
 // MembershipStatus enum: Pending=0, Approved=1, Rejected=2, Left=3
@@ -120,7 +153,7 @@ export interface ClubMember {
   id: string;
   clubId: string;
   userId: string;
-  // BE returns numeric enum: 0=Member, 1=Manager, 2=President
+  // BE returns numeric enum: 0=Member, 1=LegacyManager, 2=ClubLeader, 3=Treasurer
   role: ClubRoleEnum | number;
   // BE returns numeric enum: 0=Pending, 1=Approved, 2=Rejected, 3=Left
   status: MembershipStatusEnum | number;
@@ -185,14 +218,19 @@ export interface CreateEventRequest {
 }
 
 // ==================== REPORTS ====================
-// ReportStatus: Pending=1, Approved=2, Rejected=3
+// ReportStatus: Draft=0, PendingApproval=1, Approved=2, Rejected=3, RequestRevision=4
 export const ReportStatusMap: Record<number | string, string> = {
-  1: 'Pending',
+  0: 'Draft',
+  1: 'PendingApproval',
   2: 'Approved',
   3: 'Rejected',
-  Pending: 'Pending',
+  4: 'RequestRevision',
+  Draft: 'Draft',
+  Pending: 'PendingApproval',
+  PendingApproval: 'PendingApproval',
   Approved: 'Approved',
   Rejected: 'Rejected',
+  RequestRevision: 'RequestRevision',
 };
 
 // ReportType: Financial=1, Activity=2, General=3
@@ -208,6 +246,7 @@ export const ReportTypeMap: Record<number | string, string> = {
 export interface ActivityReport {
   id: string;
   clubId: string;
+  semesterId?: string | null;
   clubName?: string;
   title: string;
   content: string;
@@ -218,6 +257,7 @@ export interface ActivityReport {
   createdBy?: string;
   reviewedBy?: string;
   reviewNote?: string;
+  revisionNumber: number;
   createdAt: string;
   updatedAt?: string;
   attachments?: Array<{ id: string; url: string; fileName: string }>;
@@ -225,6 +265,7 @@ export interface ActivityReport {
 
 export interface SubmitReportRequest {
   clubId: string;
+  semesterId: string;
   title: string;
   content: string;
   type: number;
@@ -237,8 +278,29 @@ export interface UpdateReportRequest {
 }
 
 export interface ReviewReportRequest {
-  isApproved: boolean;
+  action: 'Approve' | 'RequestRevision' | 'Reject';
   reviewNote?: string;
+}
+
+export interface ClubApplication {
+  id: string;
+  applicantUserId: string;
+  proposedClubName: string;
+  description: string;
+  objectives: string;
+  evidenceUrls: string[];
+  status: 'PendingApproval' | 'Approved' | 'Rejected';
+  reviewFeedback?: string | null;
+  submittedAt: string;
+  reviewedAt?: string | null;
+  createdClubId?: string | null;
+}
+
+export interface ClubApplicationRequest {
+  proposedClubName: string;
+  description: string;
+  objectives: string;
+  evidenceUrls: string[];
 }
 
 // ==================== NOTIFICATION ====================
@@ -251,5 +313,8 @@ export interface Notification {
   type: number | string;
   isRead: boolean;
   referenceId?: string;
+  targetUrl?: string | null;
+  sourceEventId?: string | null;
+  readAt?: string | null;
   createdAt: string;
 }

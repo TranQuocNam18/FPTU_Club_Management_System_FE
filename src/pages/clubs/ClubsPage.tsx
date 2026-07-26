@@ -1,144 +1,146 @@
-import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Search, Plus, Building2, Users, ArrowRight, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Building2, Plus, Search, UsersRound, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { clubApi } from '../../api/club.api';
-import { useAuthStore } from '../../stores/authStore';
-import { Badge } from '../../components/ui/Badge';
+import {
+  ClubCard,
+  ClubEmptyState,
+  ClubErrorState,
+  ClubGridSkeleton,
+} from '../../components/clubs/ClubPrimitives';
 import { Button } from '../../components/ui/Button';
-import { PageSpinner, EmptyState } from '../../components/ui/Spinner';
-import { getStatusColor, formatDate } from '../../utils';
-import { Link } from 'react-router-dom';
-import type { Club } from '../../types';
+import { useGsapReveal } from '../../hooks/useGsapReveal';
+import { useAuthStore } from '../../stores/authStore';
+import type { ClubMember } from '../../types';
 import { ClubStatusMap } from '../../types';
 
-// Helper: normalize status to display string
-const getClubStatusDisplay = (status: any): string => {
-  return ClubStatusMap[status] ?? String(status);
-};
-
 export default function ClubsPage() {
-  const { user } = useAuthStore();
-  const qc = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const scopeRef = useGsapReveal<HTMLDivElement>({ animationKey: 'clubs-list' });
+  const isStudent = user?.role === 'Student';
+  const isAdmin = user?.role === 'StudentAffairsAdmin';
 
-  // Only Admin/Advisor can create clubs (per BE: [Authorize(Roles = "Admin,Advisor")])
-  const canCreateClub = user?.role === 'Admin' || user?.role === 'Advisor';
-  // Only Student can join clubs (per BE: [Authorize(Roles = "Student")])
-  const canJoinClub = user?.role === 'Student';
-
-  const { data: res, isLoading } = useQuery({
-    queryKey: ['clubs'],
-    queryFn: () => clubApi.getAll(),
+  const clubsQuery = useQuery({ queryKey: ['clubs'], queryFn: clubApi.getAll });
+  const membershipsQuery = useQuery({
+    queryKey: ['my-memberships', user?.id],
+    queryFn: clubApi.getMyMemberships,
+    enabled: isStudent && Boolean(user?.id),
   });
-  const clubs: Club[] = res?.data?.data ?? [];
-
-  const joinMutation = useMutation({
-    mutationFn: (id: string) => clubApi.joinClub(id),
-    onSuccess: () => {
-      toast.success('Đã gửi đơn gia nhập CLB!');
-      qc.invalidateQueries({ queryKey: ['clubs'] });
-    },
-    onError: () => toast.error('Không thể gia nhập CLB'),
-  });
-
-  const filtered = clubs.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.description.toLowerCase().includes(search.toLowerCase())
+  const clubs = useMemo(() => clubsQuery.data?.data.data ?? [], [clubsQuery.data]);
+  const memberships = useMemo(
+    () => membershipsQuery.data?.data.data ?? [],
+    [membershipsQuery.data],
+  );
+  const membershipByClub = useMemo(
+    () => new Map(memberships.map((membership) => [membership.clubId, membership])),
+    [memberships],
+  );
+  const normalizedSearch = search.trim().toLocaleLowerCase('vi-VN');
+  const filteredClubs = useMemo(
+    () => clubs.filter((club) => {
+      if (!normalizedSearch) return true;
+      return club.name.toLocaleLowerCase('vi-VN').includes(normalizedSearch)
+        || club.description.toLocaleLowerCase('vi-VN').includes(normalizedSearch);
+    }),
+    [clubs, normalizedSearch],
   );
 
-  if (isLoading) return <PageSpinner />;
+  const joinMutation = useMutation({
+    mutationFn: (clubId: string) => clubApi.joinClub(clubId),
+    onSuccess: async () => {
+      toast.success('Đã gửi yêu cầu gia nhập CLB.');
+      await queryClient.invalidateQueries({ queryKey: ['my-memberships', user?.id] });
+      await queryClient.invalidateQueries({ queryKey: ['clubs'] });
+    },
+    onError: () => toast.error('Không thể gửi yêu cầu gia nhập CLB.'),
+  });
 
   return (
-    <div>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div ref={scopeRef} className="clubs-page">
+      <header className="clubs-header" data-gsap-item>
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Câu lạc bộ</h1>
-          <p className="text-slate-500 text-sm mt-1">{clubs.length} CLB trong hệ thống</p>
+          <p className="clubs-eyebrow">Club discovery</p>
+          <h1>Khám phá câu lạc bộ</h1>
+          <p>Tìm hiểu các cộng đồng sinh viên và theo dõi trạng thái membership của bạn.</p>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Tìm kiếm CLB..."
-              className="pl-9 pr-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 w-56"
-            />
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                <X size={14} />
-              </button>
-            )}
-          </div>
-          {/* Tạo CLB chỉ Admin/Advisor — Admin nên dùng /admin/clubs để full control */}
-          {canCreateClub && (
-            <Link to="/admin/clubs">
-              <Button icon={<Plus size={16} />}>Quản lý CLB</Button>
-            </Link>
+        {isAdmin && (
+          <Link className="clubs-admin-link" to="/admin/clubs">
+            <Plus size={18} aria-hidden="true" /> Quản lý câu lạc bộ
+          </Link>
+        )}
+      </header>
+
+      <div className="clubs-toolbar" data-gsap-item>
+        <label className="clubs-search">
+          <span className="sr-only">Tìm kiếm câu lạc bộ</span>
+          <Search size={18} aria-hidden="true" />
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Tìm theo tên hoặc mô tả..."
+          />
+          {search && (
+            <button type="button" onClick={() => setSearch('')} aria-label="Xóa từ khóa tìm kiếm">
+              <X size={17} aria-hidden="true" />
+            </button>
           )}
-        </div>
+        </label>
+        <p><Building2 size={17} aria-hidden="true" />{clubs.length} câu lạc bộ</p>
       </div>
 
-      {/* Grid */}
-      {filtered.length === 0 ? (
-        <EmptyState icon={<Building2 size={48} />} title="Không tìm thấy CLB nào" description="Thử tìm với từ khóa khác" />
+      {clubsQuery.isLoading ? (
+        <ClubGridSkeleton />
+      ) : clubsQuery.isError ? (
+        <ClubErrorState message="Danh sách câu lạc bộ hiện không khả dụng." onRetry={() => void clubsQuery.refetch()} />
+      ) : filteredClubs.length === 0 ? (
+        <ClubEmptyState
+          title={search ? 'Không tìm thấy câu lạc bộ' : 'Chưa có câu lạc bộ'}
+          description={search ? 'Thử một từ khóa khác hoặc xóa bộ lọc tìm kiếm.' : 'Hệ thống chưa có câu lạc bộ để hiển thị.'}
+          action={search ? <Button variant="outline" onClick={() => setSearch('')}>Xóa tìm kiếm</Button> : undefined}
+        />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-          {filtered.map(club => {
-            const statusDisplay = getClubStatusDisplay(club.status);
-            const isActive = club.status === 1 || club.status === 'Active';
-            return (
-              <div key={club.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-lg hover:-translate-y-1 transition-all duration-200 group">
-                {/* Cover */}
-                <div className="h-24 bg-gradient-to-br from-indigo-400 via-violet-500 to-purple-600 relative">
-                  <div className="absolute inset-0 opacity-20 bg-[radial-gradient(circle_at_80%_20%,white,transparent)]" />
-                  <div className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-14 h-14 rounded-2xl bg-white shadow-lg flex items-center justify-center text-2xl font-bold text-indigo-600 border-2 border-white">
-                    {club.logoUrl ? (
-                      <img src={club.logoUrl} alt={club.name} className="w-full h-full object-cover rounded-2xl" />
-                    ) : (
-                      club.name.charAt(0)
-                    )}
-                  </div>
-                </div>
+        <div className="clubs-grid" aria-busy={membershipsQuery.isLoading || undefined}>
+          {filteredClubs.map((club) => {
+            const membership = membershipByClub.get(club.id);
+            const active = ClubStatusMap[club.status] === 'Active';
+            const membershipResolved = !isStudent || membershipsQuery.isSuccess;
+            const canSubmitJoin = isStudent && active && membershipResolved && !membership;
+            let joinAction;
 
-                <div className="pt-9 pb-5 px-5 text-center">
-                  <h3 className="text-sm font-bold text-slate-800 truncate group-hover:text-indigo-600 transition-colors">{club.name}</h3>
-                  {club.category && <p className="text-xs text-slate-400 mt-0.5">{club.category}</p>}
-                  <Badge className={`${getStatusColor(statusDisplay)} mt-2`}>{statusDisplay}</Badge>
-                  <p className="text-xs text-slate-400 mt-2 line-clamp-2">{club.description}</p>
+            if (isStudent && !membershipResolved) {
+              joinAction = <span className="club-join-pending">Đang kiểm tra membership...</span>;
+            } else if (canSubmitJoin) {
+              joinAction = (
+                <Button
+                  size="sm"
+                  loading={joinMutation.isPending && joinMutation.variables === club.id}
+                  disabled={joinMutation.isPending}
+                  onClick={() => joinMutation.mutate(club.id)}
+                  icon={<UsersRound size={15} aria-hidden="true" />}
+                >
+                  Gia nhập
+                </Button>
+              );
+            } else if (isStudent && !active && !membership) {
+              joinAction = <span className="club-join-unavailable">CLB hiện không nhận yêu cầu</span>;
+            }
 
-                  <div className="flex gap-2 mt-4">
-                    <Link to={`/clubs/${club.id}`} className="flex-1">
-                      <button className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-slate-200 text-xs font-medium text-slate-600 hover:border-indigo-300 hover:text-indigo-600 transition-all">
-                        Chi tiết <ArrowRight size={12} />
-                      </button>
-                    </Link>
-                    {/* Gia nhập: chỉ Student, chỉ khi club Active */}
-                    {canJoinClub && (
-                      isActive ? (
-                        <button
-                          onClick={() => joinMutation.mutate(club.id)}
-                          disabled={joinMutation.isPending}
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                        >
-                          <Users size={12} /> Gia nhập
-                        </button>
-                      ) : (
-                        <button
-                          disabled
-                          className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl bg-slate-100 text-slate-400 text-xs font-medium cursor-not-allowed border border-slate-200"
-                        >
-                          <Users size={12} /> Không nhận
-                        </button>
-                      )
-                    )}
-                  </div>
-                </div>
-              </div>
-            );
+            return <ClubCard key={club.id} club={club} membership={membership as ClubMember | undefined} joinAction={joinAction} />;
           })}
+        </div>
+      )}
+
+      {isStudent && membershipsQuery.isError && (
+        <div className="mt-5">
+          <ClubErrorState
+            message="Không thể xác định membership nên thao tác gia nhập đang được ẩn để tránh gửi trùng."
+            onRetry={() => void membershipsQuery.refetch()}
+          />
         </div>
       )}
     </div>

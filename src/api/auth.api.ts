@@ -13,4 +13,20 @@ export const authApi = {
 
   me: () =>
     api.get<ApiResponse<User>>('/gateway/auth/me'),
+
+  logout: (refreshToken: string) =>
+    api.post<ApiResponse<null>>('/gateway/auth/logout', { refreshToken }),
+
+  forgotPassword: (email: string) =>
+    api.post<ApiResponse<{ email: string }>>('/gateway/auth/forgot-password', { email }),
+
+  resetPassword: (data: {
+    email: string; resetCode: string; newPassword: string; confirmNewPassword: string;
+  }) => api.post<ApiResponse<null>>('/gateway/auth/reset-password', data),
+
+  verifyEmail: (email: string, code: string) =>
+    api.post<ApiResponse<null>>('/gateway/auth/verify-email', { email, code }),
+
+  resendVerification: (email: string) =>
+    api.post<ApiResponse<{ requiresEmailVerification: boolean }>>('/gateway/auth/resend-verification', { email }),
 };

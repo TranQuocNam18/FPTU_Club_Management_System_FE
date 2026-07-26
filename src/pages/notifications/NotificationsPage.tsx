@@ -1,114 +1,77 @@
-import React, { useState } from 'react';
-import { Bell, CheckCheck, Info, AlertTriangle, CheckCircle, XCircle, ClipboardList } from 'lucide-react';
-import { formatDateTime } from '../../utils';
-import { cn } from '../../utils';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { notificationApi } from '../../api/notification.api';
+import { useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { CheckCheck, Radio, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { notificationApi } from '../../api/notification.api';
+import { BroadcastWorkspace } from '../../components/admin/BroadcastWorkspace';
+import { NotificationCard, NotificationSkeleton, NotificationState } from '../../components/notifications/NotificationPrimitives';
+import { Button } from '../../components/ui/Button';
+import { Modal } from '../../components/ui/Modal';
+import { useGsapReveal } from '../../hooks/useGsapReveal';
+import { useAuthStore } from '../../stores/authStore';
+import type { Notification } from '../../types';
+import { getApiError } from '../../utils';
+import { subscribeRealtimeState, type RealtimeState } from '../../utils/signalr';
 
-const typeConfig = {
-  Success: { icon: <CheckCircle size={20} />, bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-100' },
-  Info: { icon: <Info size={20} />, bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-100' },
-  Warning: { icon: <AlertTriangle size={20} />, bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-100' },
-  Error: { icon: <XCircle size={20} />, bg: 'bg-red-50', text: 'text-red-500', border: 'border-red-100' },
-  ReportSubmitted: { icon: <ClipboardList size={20} />, bg: 'bg-indigo-50', text: 'text-indigo-600', border: 'border-indigo-100' },
-};
+type Filter = 'all' | 'unread' | 'read';
 
 export default function NotificationsPage() {
-  const qc = useQueryClient();
-  const [filter, setFilter] = useState<'all' | 'unread'>('all');
-
-  const { data: res, isLoading } = useQuery({
-    queryKey: ['notifications'],
+  const scope = useGsapReveal<HTMLDivElement>();
+  const queryClient = useQueryClient();
+  const user = useAuthStore((state) => state.user);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [deleteTarget, setDeleteTarget] = useState<Notification | null>(null);
+  const [realtimeState, setRealtimeState] = useState<RealtimeState>('disconnected');
+  useEffect(() => subscribeRealtimeState(setRealtimeState), []);
+  const query = useQuery({
+    queryKey: ['notifications', user?.id],
     queryFn: () => notificationApi.getMyNotifications(),
+    enabled: Boolean(user?.id),
   });
-  const notifications = res?.data?.data ?? [];
+  const notifications = query.data?.data.data ?? [];
+  const unreadCount = notifications.filter((notification) => !notification.isRead).length;
+  const filtered = notifications.filter((notification) => filter === 'all' || (filter === 'read' ? notification.isRead : !notification.isRead));
 
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['notifications'] });
   const markReadMutation = useMutation({
-    mutationFn: (id: string) => notificationApi.markAsRead(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['notifications'] });
-    },
+    mutationFn: notificationApi.markAsRead,
+    onSuccess: invalidate,
+    onError: (error) => toast.error(getApiError(error, 'Không thể đánh dấu đã đọc.')),
   });
-
-  const markAllReadMutation = useMutation({
-    mutationFn: () => notificationApi.markAllAsRead(),
-    onSuccess: () => {
-      toast.success('Đã đánh dấu đọc tất cả thông báo!');
-      qc.invalidateQueries({ queryKey: ['notifications'] });
-    },
+  const markAllMutation = useMutation({
+    mutationFn: notificationApi.markAllAsRead,
+    onSuccess: async () => { toast.success('Đã đánh dấu đọc tất cả.'); await invalidate(); },
+    onError: (error) => toast.error(getApiError(error, 'Không thể đánh dấu đọc tất cả.')),
   });
-
-  const filtered = filter === 'unread' ? notifications.filter(n => !n.isRead) : notifications;
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const deleteMutation = useMutation({
+    mutationFn: notificationApi.delete,
+    onSuccess: async () => { toast.success('Đã xóa thông báo.'); setDeleteTarget(null); await invalidate(); },
+    onError: (error) => toast.error(getApiError(error, 'Không thể xóa thông báo.')),
+  });
 
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-            Thông báo
-            {unreadCount > 0 && (
-              <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-indigo-600 text-white text-xs font-bold animate-pulse">
-                {unreadCount}
-              </span>
-            )}
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">{unreadCount} thông báo chưa đọc</p>
+    <div ref={scope} className="notifications-page">
+      <header className="notifications-header" data-gsap-item>
+        <div><p className="notifications-eyebrow">Notification center</p><h1>Thông báo</h1><p><strong>{unreadCount}</strong> thông báo chưa đọc từ dữ liệu REST hiện tại.</p></div>
+        <div className="notifications-header__actions">
+          <span className={`realtime-indicator is-${realtimeState}`}><Radio size={14} />Realtime: {realtimeState}</span>
+          {unreadCount > 0 && <Button variant="outline" icon={<CheckCheck size={16} />} loading={markAllMutation.isPending} onClick={() => markAllMutation.mutate()}>Đánh dấu đọc tất cả</Button>}
         </div>
-        {unreadCount > 0 && (
-          <button onClick={() => markAllReadMutation.mutate()}
-            disabled={markAllReadMutation.isPending}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50">
-            <CheckCheck size={16} /> Đánh dấu đã đọc tất cả
-          </button>
-        )}
-      </div>
+      </header>
 
-      {/* Filter */}
-      <div className="flex gap-1 bg-slate-100 rounded-xl p-1 w-fit mb-5">
-        {([['all', 'Tất cả'], ['unread', 'Chưa đọc']] as const).map(([v, label]) => (
-          <button key={v} onClick={() => setFilter(v)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${filter === v ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-            {label}
-          </button>
-        ))}
-      </div>
+      {user?.role === 'StudentAffairsAdmin' && <BroadcastWorkspace />}
 
-      {filtered.length === 0 ? (
-        <div className="text-center py-16">
-          <Bell size={48} className="mx-auto text-slate-200 mb-3" />
-          <p className="text-slate-400">Không có thông báo nào</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map(n => {
-            const config = typeConfig[n.type as keyof typeof typeConfig] ?? typeConfig.Info;
-            return (
-              <div
-                key={n.id}
-                onClick={() => !n.isRead && markReadMutation.mutate(n.id)}
-                className={cn(
-                  'bg-white rounded-2xl shadow-sm border p-5 flex items-start gap-4 cursor-pointer transition-all hover:shadow-md',
-                  n.isRead ? 'border-slate-100 opacity-75' : `border-l-4 ${config.border}`,
-                )}
-              >
-                <div className={`w-10 h-10 rounded-xl ${config.bg} ${config.text} flex items-center justify-center flex-shrink-0`}>
-                  {config.icon}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className={`text-sm font-semibold ${n.isRead ? 'text-slate-600' : 'text-slate-800'}`}>{n.title}</p>
-                    {!n.isRead && <span className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />}
-                  </div>
-                  <p className="text-sm text-slate-500 mt-1">{n.message}</p>
-                  <p className="text-xs text-slate-400 mt-2">{formatDateTime(n.createdAt)}</p>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+      <nav className="notification-filters" aria-label="Lọc thông báo" data-gsap-item>
+        {([['all', `Tất cả (${notifications.length})`], ['unread', `Chưa đọc (${unreadCount})`], ['read', 'Đã đọc']] as const).map(([value, label]) => <button key={value} className={filter === value ? 'is-active' : ''} onClick={() => setFilter(value)}>{label}</button>)}
+      </nav>
+
+      {query.isLoading ? <NotificationSkeleton /> : query.isError ? <NotificationState error onRetry={() => query.refetch()} /> : filtered.length === 0 ? <NotificationState /> : (
+        <ul className="notification-list" aria-label="Danh sách thông báo">{filtered.map((notification) => <NotificationCard key={notification.id} notification={notification} onRead={() => markReadMutation.mutate(notification.id)} onDelete={() => setDeleteTarget(notification)} />)}</ul>
       )}
+
+      <Modal isOpen={Boolean(deleteTarget)} onClose={() => !deleteMutation.isPending && setDeleteTarget(null)} title="Xóa thông báo">
+        {deleteTarget && <div className="notification-confirm"><Trash2 size={26} /><h2>Xóa “{deleteTarget.title}”?</h2><p>Thông báo sẽ bị xóa khỏi tài khoản sau khi server xác nhận.</p><div><Button variant="ghost" onClick={() => setDeleteTarget(null)}>Giữ lại</Button><Button variant="danger" loading={deleteMutation.isPending} onClick={() => deleteMutation.mutate(deleteTarget.id)}>Xóa thông báo</Button></div></div>}
+      </Modal>
     </div>
   );
 }
