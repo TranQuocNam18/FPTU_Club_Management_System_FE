@@ -282,6 +282,110 @@ export interface ReviewReportRequest {
   reviewNote?: string;
 }
 
+export interface SmartReportSourceReference {
+  type: string;
+  id: string;
+  title: string;
+  route?: string | null;
+}
+
+export interface SmartReportAvailability {
+  club: boolean;
+  membership: boolean;
+  events: boolean;
+  finance: boolean;
+  balance: boolean;
+  kpi: boolean;
+}
+
+export interface SmartReportSnapshotEvent {
+  id: string;
+  title: string;
+  expectedDate: string;
+  status: string;
+}
+
+export interface SmartReportFinanceItem {
+  id: string;
+  activityId?: string | null;
+  title: string;
+  proposedDate: string;
+  status: string;
+  requestedAmount: number;
+  approvedAmount?: number | null;
+  actualAmount?: number | null;
+}
+
+export interface ReportGenerationSnapshot {
+  clubId: string;
+  clubName: string;
+  semesterId: string;
+  semesterCode: string;
+  totalMembers: number | null;
+  newMembers: number | null;
+  completedEvents: number | null;
+  cancelledEvents: number | null;
+  approvedBudget: number | null;
+  actualExpense: number | null;
+  remainingBalance: number | null;
+  kpiScore: number | null;
+  kpiRank: number | null;
+  events: SmartReportSnapshotEvent[];
+  financeItems: SmartReportFinanceItem[];
+  sources: SmartReportSourceReference[];
+  availability: SmartReportAvailability;
+}
+
+export type ReportValidationSeverity = 1 | 2 | 3 | 'Error' | 'Warning' | 'Suggestion';
+
+export interface ReportValidationIssue {
+  code: string;
+  severity: ReportValidationSeverity;
+  message: string;
+  field?: string | null;
+  sourceType?: string | null;
+  sourceId?: string | null;
+  sourceTitle?: string | null;
+  suggestedAction?: string | null;
+}
+
+export interface ReportValidationResult {
+  isReadyToSubmit: boolean;
+  errors: ReportValidationIssue[];
+  warnings: ReportValidationIssue[];
+  suggestions: ReportValidationIssue[];
+  evaluatedAt: string;
+  clubId: string;
+  semesterId: string;
+  snapshotVersion: string;
+  availability: SmartReportAvailability;
+}
+
+export interface GenerateSmartReportRequest {
+  clubId: string;
+  semesterId: string;
+  reportType: number;
+}
+
+export interface ValidateSmartReportRequest extends GenerateSmartReportRequest {
+  title: string;
+  content: string;
+  attachments?: Array<{ url: string; fileName: string }>;
+}
+
+export interface GeneratedReportDraft {
+  clubId: string;
+  semesterId: string;
+  reportType: number;
+  generatedTitle: string;
+  generatedContent: string;
+  sources: SmartReportSourceReference[];
+  validation: ReportValidationResult;
+  generatorType: 'RuleBased';
+  snapshotVersion: string;
+  generatedAt: string;
+}
+
 export interface ClubApplication {
   id: string;
   applicantUserId: string;

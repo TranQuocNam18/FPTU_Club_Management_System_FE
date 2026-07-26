@@ -27,6 +27,7 @@ import {
   ReportWorkflow,
   ReviewOutcomeIcon,
 } from '../../components/reports/ReportPrimitives';
+import { SmartReportAssistantPanel } from '../../components/reports/SmartReportAssistantPanel';
 import { reportStatus, reportType } from '../../components/reports/reportUtils';
 import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
@@ -162,17 +163,16 @@ export default function ReportsPage() {
   const invalidateReports = () => queryClient.invalidateQueries({ queryKey: ['reports', effectiveClubId] });
   const createMutation = useMutation({
     mutationFn: async (values: CreateReportForm) => {
-      const created = await reportApi.create({
+      return reportApi.create({
         clubId: effectiveClubId,
         semesterId: values.semesterId,
         title: values.title,
         content: values.content,
         type: Number(values.type),
       });
-      return reportApi.submit(created.data.data.id);
     },
     onSuccess: async () => {
-      toast.success('Đã tạo và nộp báo cáo.');
+      toast.success('Đã lưu bản nháp báo cáo.');
       setCreateOpen(false);
       createForm.reset({ type: '2', semesterId: '' });
       await invalidateReports();
@@ -342,7 +342,7 @@ export default function ReportsPage() {
         )}
       </Modal>
 
-      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title="Tạo và nộp báo cáo" size="lg">
+      <Modal isOpen={createOpen} onClose={() => setCreateOpen(false)} title="Tạo báo cáo" size="xl">
         {semestersQuery.isLoading ? <ReportSkeleton count={2} /> : semestersQuery.isError ? (
           <ReportErrorState message="Không thể tải Active Semester." onRetry={() => void semestersQuery.refetch()} />
         ) : activeSemesters.length === 0 ? (
@@ -351,6 +351,7 @@ export default function ReportsPage() {
           <ReportForm
             mode="create"
             form={createForm}
+            clubId={effectiveClubId}
             semesters={activeSemesters}
             pending={createMutation.isPending}
             onCancel={() => setCreateOpen(false)}
@@ -441,6 +442,7 @@ function ReportDetail({
 
 function ReportForm({
   form,
+  clubId,
   semesters,
   pending,
   onCancel,
@@ -448,20 +450,37 @@ function ReportForm({
 }: {
   mode: 'create';
   form: ReturnType<typeof useForm<CreateReportForm>>;
+  clubId: string;
   semesters: Semester[];
   pending: boolean;
   onCancel: () => void;
   onSubmit: (values: CreateReportForm) => void;
 }) {
-  const { register, handleSubmit, formState: { errors } } = form;
+  const { register, handleSubmit, formState: { errors }, watch, setValue } = form;
+  const semesterId = watch('semesterId') ?? '';
+  const selectedType = watch('type') ?? '2';
+  const title = watch('title') ?? '';
+  const content = watch('content') ?? '';
   return (
     <form className="report-form" onSubmit={handleSubmit(onSubmit)}>
       <label>Active Semester<select {...register('semesterId', { required: 'Vui lòng chọn Active Semester.' })}><option value="">Chọn semester</option>{semesters.map((semester) => <option value={semester.id} key={semester.id}>{semester.code} — {semester.name}</option>)}</select>{errors.semesterId && <span role="alert">{errors.semesterId.message}</span>}</label>
       <label>Loại báo cáo<select {...register('type', { required: true })}><option value="1">Tài chính</option><option value="2">Hoạt động</option><option value="3">Tổng hợp</option></select></label>
+      <SmartReportAssistantPanel
+        key={`${clubId}:${semesterId}:${selectedType}`}
+        clubId={clubId}
+        semesterId={semesterId}
+        reportType={Number(selectedType)}
+        title={title}
+        content={content}
+        onApplyDraft={(generatedTitle, generatedContent) => {
+          setValue('title', generatedTitle, { shouldDirty: true, shouldValidate: true });
+          setValue('content', generatedContent, { shouldDirty: true, shouldValidate: true });
+        }}
+      />
       <label>Tiêu đề<input {...register('title', { required: 'Vui lòng nhập tiêu đề.', minLength: { value: 5, message: 'Tối thiểu 5 ký tự.' }, maxLength: { value: 200, message: 'Tối đa 200 ký tự.' } })} />{errors.title && <span role="alert">{errors.title.message}</span>}</label>
       <label>Nội dung<textarea rows={9} {...register('content', { required: 'Vui lòng nhập nội dung.', minLength: { value: 20, message: 'Tối thiểu 20 ký tự.' } })} />{errors.content && <span role="alert">{errors.content.message}</span>}</label>
-      <p className="report-form-note">Workflow hiện tại sẽ tạo Draft rồi gọi submit ngay sau khi create thành công.</p>
-      <div className="report-form-actions"><Button type="button" variant="outline" onClick={onCancel}>Hủy</Button><Button type="submit" loading={pending} icon={<Send size={16} aria-hidden="true" />}>Tạo và nộp</Button></div>
+      <p className="report-form-note">Nội dung chỉ được lưu thành Draft. Bạn quyết định thời điểm gửi duyệt bằng action trên thẻ báo cáo.</p>
+      <div className="report-form-actions"><Button type="button" variant="outline" onClick={onCancel}>Hủy</Button><Button type="submit" loading={pending} icon={<Send size={16} aria-hidden="true" />}>Lưu bản nháp</Button></div>
     </form>
   );
 }

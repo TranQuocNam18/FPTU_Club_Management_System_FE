@@ -1,5 +1,16 @@
 import api from './axios';
-import type { ApiResponse, ActivityReport, SubmitReportRequest, ReviewReportRequest, UpdateReportRequest } from '../types';
+import type {
+  ApiResponse,
+  ActivityReport,
+  GeneratedReportDraft,
+  GenerateSmartReportRequest,
+  ReportGenerationSnapshot,
+  ReportValidationResult,
+  ReviewReportRequest,
+  SubmitReportRequest,
+  UpdateReportRequest,
+  ValidateSmartReportRequest,
+} from '../types';
 
 export const reportApi = {
   create: (data: SubmitReportRequest) =>
@@ -29,4 +40,22 @@ export const reportApi = {
       id: string; reportId: string; revisionNumber: number; previousStatus: string;
       newStatus: string; feedback?: string; changedBy: string; changedAt: string;
     }>>>(`/gateway/reports/${id}/history`),
+
+  getSmartReportPreview: (clubId: string, semesterId: string) =>
+    api.get<ApiResponse<ReportGenerationSnapshot>>(
+      '/gateway/reports/smart-assistant/preview',
+      { params: { clubId, semesterId } },
+    ),
+
+  generateSmartReportDraft: (data: GenerateSmartReportRequest) =>
+    api.post<ApiResponse<GeneratedReportDraft>>(
+      '/gateway/reports/smart-assistant/generate',
+      data,
+    ),
+
+  validateSmartReport: (data: ValidateSmartReportRequest) =>
+    api.post<ApiResponse<ReportValidationResult>>(
+      '/gateway/reports/smart-assistant/validate',
+      data,
+    ),
 };
