@@ -18,6 +18,7 @@ import toast from 'react-hot-toast';
 import { clubApi } from '../../api/club.api';
 import { eventApi } from '../../api/event.api';
 import { reportApi } from '../../api/report.api';
+import { userApi } from '../../api/user.api';
 import {
   ClubEmptyState,
   ClubErrorState,
@@ -34,7 +35,7 @@ import { Modal } from '../../components/ui/Modal';
 import { Skeleton } from '../../components/ui/Skeleton';
 import { useGsapReveal } from '../../hooks/useGsapReveal';
 import { useAuthStore } from '../../stores/authStore';
-import type { ActivityReport, ClubEvent, ClubMember, CreateEventRequest } from '../../types';
+import type { ActivityReport, ClubEvent, ClubMember, CreateEventRequest, User } from '../../types';
 import {
   ClubRoleLabel,
   EventStatusLabel,
@@ -332,6 +333,19 @@ function MembersPanel({
   onRoleChange: (userId: string, role: number) => void;
   onRemove: (member: ClubMember) => void;
 }) {
+  const usersQuery = useQuery({
+    queryKey: ['all-users-lookup'],
+    queryFn: () => userApi.getAll({ pageSize: 100 }),
+    staleTime: 60000,
+  });
+  const usersMap = useMemo(() => {
+    const map: Record<string, User> = {};
+    for (const u of usersQuery.data?.data.data ?? []) {
+      if (u.id) map[u.id.toLowerCase()] = u;
+    }
+    return map;
+  }, [usersQuery.data]);
+
   if (query.isLoading) return <ClubMembersSkeleton />;
   if (query.isError) return <ClubErrorState message="Không thể tải danh sách thành viên." onRetry={() => void query.refetch()} />;
   return (
@@ -342,7 +356,7 @@ function MembersPanel({
             <div className="join-request-list">
               {pendingMembers.map((member) => (
                 <article key={member.id}>
-                  <MemberIdentity member={member} />
+                  <MemberIdentity member={member} user={usersMap[member.userId.toLowerCase()]} isSelf={member.userId.toLowerCase() === currentUserId?.toLowerCase()} />
                   <time dateTime={member.joinedAt}>{formatDate(member.joinedAt)}</time>
                   <div>
                     <Button size="sm" variant="outline" disabled={mutationPending} onClick={() => onReject(member.userId)} icon={<X size={15} aria-hidden="true" />}>Từ chối</Button>
@@ -357,29 +371,33 @@ function MembersPanel({
       <ClubSection title="Thành viên" description={`${members.length} membership đã được duyệt trong response hiện tại.`}>
         {members.length === 0 ? <ClubEmptyState title="Chưa có thành viên" description="Không có membership Approved để hiển thị." /> : (
           <div className="member-grid">
-            {members.map((member) => (
-              <article className="member-card" key={member.id}>
-                <MemberIdentity member={member} />
-                <div className="member-card__meta">
-                  {canManage ? (
-                    <label>
-                      <span className="sr-only">Vai trò của {member.fullName || member.userId}</span>
-                      <select value={Number(member.role)} disabled={mutationPending} onChange={(event) => onRoleChange(member.userId, Number(event.target.value))}>
-                        <option value={0}>Thành viên</option>
-                        <option value={2}>Chủ nhiệm</option>
-                        <option value={3}>Thủ quỹ</option>
-                      </select>
-                    </label>
-                  ) : <Badge className="bg-indigo-100 text-indigo-700">{ClubRoleLabel[member.role] ?? `Role ${member.role}`}</Badge>}
-                  <time dateTime={member.joinedAt}>Tham gia {formatDate(member.joinedAt)}</time>
-                </div>
-                {canManage && member.userId !== currentUserId && (
-                  <button type="button" className="member-card__remove" onClick={() => onRemove(member)} aria-label={`Xóa ${member.fullName || 'thành viên'} khỏi CLB`}>
-                    <UserMinus size={17} aria-hidden="true" />
-                  </button>
-                )}
-              </article>
-            ))}
+            {members.map((member) => {
+              const u = usersMap[member.userId.toLowerCase()];
+              const isSelf = member.userId.toLowerCase() === currentUserId?.toLowerCase();
+              return (
+                <article className="member-card" key={member.id}>
+                  <MemberIdentity member={member} user={u} isSelf={isSelf} />
+                  <div className="member-card__meta">
+                    {canManage ? (
+                      <label>
+                        <span className="sr-only">Vai trò của {u?.fullName || member.fullName || member.userId}</span>
+                        <select value={Number(member.role)} disabled={mutationPending} onChange={(event) => onRoleChange(member.userId, Number(event.target.value))}>
+                          <option value={0}>Thành viên</option>
+                          <option value={2}>Chủ nhiệm</option>
+                          <option value={3}>Thủ quỹ</option>
+                        </select>
+                      </label>
+                    ) : <Badge className="bg-indigo-100 text-indigo-700">{ClubRoleLabel[member.role] ?? `Role ${member.role}`}</Badge>}
+                    <time dateTime={member.joinedAt}>Tham gia {formatDate(member.joinedAt)}</time>
+                  </div>
+                  {canManage && member.userId !== currentUserId && (
+                    <button type="button" className="member-card__remove" onClick={() => onRemove(member)} aria-label={`Xóa ${u?.fullName || member.fullName || 'thành viên'} khỏi CLB`}>
+                      <UserMinus size={17} aria-hidden="true" />
+                    </button>
+                  )}
+                </article>
+              );
+            })}
           </div>
         )}
       </ClubSection>
@@ -387,12 +405,33 @@ function MembersPanel({
   );
 }
 
-function MemberIdentity({ member }: { member: ClubMember }) {
-  const name = member.fullName || `Thành viên ${member.userId.slice(0, 8)}`;
+function MemberIdentity({ member, user, isSelf }: { member: ClubMember; user?: User; isSelf?: boolean }) {
+  const name = member.fullName || user?.fullName || (member.email ? member.email : `Thành viên ${member.userId.slice(0, 8)}`);
   return (
     <div className="member-identity">
       <Avatar name={name} size="md" />
-      <div><strong>{name}</strong><small>{ClubRoleLabel[member.role] ?? `Role ${member.role}`}</small></div>
+      <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+          <strong>{name}</strong>
+          {isSelf && (
+            <span
+              style={{
+                fontSize: '0.7rem',
+                fontWeight: 600,
+                padding: '0.1rem 0.45rem',
+                borderRadius: '9999px',
+                backgroundColor: 'rgba(99, 102, 241, 0.18)',
+                color: '#818cf8',
+                border: '1px solid rgba(99, 102, 241, 0.35)',
+              }}
+            >
+              Bạn (You)
+            </span>
+          )}
+        </div>
+        {user?.email && <span style={{ display: 'block', fontSize: '0.75rem', opacity: 0.7 }}>{user.email}</span>}
+        <small>{ClubRoleLabel[member.role] ?? `Role ${member.role}`}</small>
+      </div>
     </div>
   );
 }

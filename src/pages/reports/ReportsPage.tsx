@@ -212,7 +212,13 @@ export default function ReportsPage() {
   });
 
   function openCreate() {
-    createForm.reset({ type: '2', semesterId: activeSemesters[0]?.id ?? '' });
+    const defaultSemester = activeSemesters[0]
+      ?? semesters.find((s) => {
+        const now = new Date();
+        return new Date(s.startDate) <= now && now <= new Date(s.endDate);
+      })
+      ?? semesters[0];
+    createForm.reset({ type: '2', semesterId: defaultSemester?.id ?? '' });
     setCreateOpen(true);
   }
 
@@ -291,8 +297,8 @@ export default function ReportsPage() {
           {canSubmitReports && semestersQuery.isError && (
             <ReportErrorState message="Semester endpoint lỗi; form tạo báo cáo bị khóa để tránh submit thiếu semester." onRetry={() => void semestersQuery.refetch()} />
           )}
-          {canSubmitReports && semestersQuery.isSuccess && activeSemesters.length === 0 && (
-            <div className="report-unavailable" role="status">Không có Active Semester. Không thể tạo báo cáo mới.</div>
+          {canSubmitReports && semestersQuery.isSuccess && semesters.length === 0 && (
+            <div className="report-unavailable" role="status">Không có dữ liệu Semester. Không thể tạo báo cáo mới.</div>
           )}
 
           {reportsQuery.isLoading ? <ReportSkeleton /> : reportsQuery.isError ? (
@@ -301,7 +307,7 @@ export default function ReportsPage() {
             <ReportEmptyState
               title={reports.length === 0 ? 'Chưa có báo cáo' : 'Không có kết quả phù hợp'}
               description={reports.length === 0 ? 'Câu lạc bộ chưa có báo cáo trong response hiện tại.' : 'Thử xóa hoặc thay đổi bộ lọc.'}
-              action={canSubmitReports && activeSemesters.length > 0 ? <Button onClick={openCreate}>Tạo báo cáo đầu tiên</Button> : undefined}
+              action={canSubmitReports && semesters.length > 0 ? <Button onClick={openCreate}>Tạo báo cáo đầu tiên</Button> : undefined}
             />
           ) : (
             <div className="report-list">
@@ -461,9 +467,20 @@ function ReportForm({
   const selectedType = watch('type') ?? '2';
   const title = watch('title') ?? '';
   const content = watch('content') ?? '';
+
+  const activeSemester = semesters.find((s) => s.id === semesterId)
+    ?? semesters.find((s) => s.status === 'Active')
+    ?? semesters[0];
+
   return (
     <form className="report-form" onSubmit={handleSubmit(onSubmit)}>
-      <label>Active Semester<select {...register('semesterId', { required: 'Vui lòng chọn Active Semester.' })}><option value="">Chọn semester</option>{semesters.map((semester) => <option value={semester.id} key={semester.id}>{semester.code} — {semester.name}</option>)}</select>{errors.semesterId && <span role="alert">{errors.semesterId.message}</span>}</label>
+      <input type="hidden" {...register('semesterId', { required: 'Thiếu thông tin Học kỳ.' })} />
+      <label>
+        Học kỳ hiện tại
+        <div className="report-form__readonly-field">
+          {activeSemester ? `${activeSemester.code} — ${activeSemester.name}` : 'Đang tải học kỳ...'}
+        </div>
+      </label>
       <label>Loại báo cáo<select {...register('type', { required: true })}><option value="1">Tài chính</option><option value="2">Hoạt động</option><option value="3">Tổng hợp</option></select></label>
       <SmartReportAssistantPanel
         key={`${clubId}:${semesterId}:${selectedType}`}

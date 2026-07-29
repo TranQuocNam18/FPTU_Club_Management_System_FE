@@ -81,4 +81,6 @@ export const financeApi = {
     api.get<ApiResponse<FinanceTransaction[]>>('/gateway/finance/transactions', { params: { clubId } }),
   settleProposal: (proposalId: string, data: SettleProposalRequest) =>
     api.post<ApiResponse<BudgetProposal>>(`/gateway/finance/proposals/${proposalId}/settle`, data),
+  createTransaction: (data: { clubId: string; referenceId?: string; amount: number; type: string; description: string; receiptUrl?: string }) =>
+    api.post<ApiResponse<FinanceTransaction>>('/gateway/finance/transactions', data),
 };

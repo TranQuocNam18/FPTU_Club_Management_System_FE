@@ -65,5 +65,18 @@ export function getApiError(error: unknown, fallback = 'Không thể thực hi�
     message?: string;
     errors?: Array<{ message?: string }>;
   } | undefined;
-  return data?.errors?.[0]?.message ?? data?.message ?? fallback;
+  
+  const rawMsg = data?.errors?.[0]?.message ?? data?.message;
+  if (!rawMsg) return fallback;
+
+  // Translate common backend domain error messages to Vietnamese
+  const translations: Record<string, string> = {
+    'Applicant already has a pending club application.': 'Bạn đã có một đơn đăng ký thành lập CLB đang chờ duyệt. Vui lòng đợi kết quả.',
+    'An active club or pending application already uses this name.': 'Tên câu lạc bộ này đã tồn tại hoặc đang có đơn đăng ký chờ duyệt.',
+    'Invalid actor identity.': 'Phiên làm việc không hợp lệ. Vui lòng đăng nhập lại.',
+    'User is not active.': 'Tài khoản của bạn đã bị khóa hoặc chưa kích hoạt.',
+    'Invalid email or password.': 'Email hoặc mật khẩu không chính xác.'
+  };
+
+  return translations[rawMsg] ?? rawMsg;
 }

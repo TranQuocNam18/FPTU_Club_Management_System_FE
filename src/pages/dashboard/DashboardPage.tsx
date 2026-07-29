@@ -52,7 +52,7 @@ function DashboardWelcome({ role }: { role: string }) {
     <DashboardHeader
       eyebrow={getRoleLabel(role)}
       title={`Chào ${displayName}`}
-      description="Tổng hợp những thông tin có thể xác minh từ dữ liệu hệ thống hiện tại."
+      description="Tổng quan tình hình hoạt động và thông báo mới nhất."
     />
   );
 }
@@ -88,15 +88,15 @@ function StudentDashboard() {
     <>
       <DashboardWelcome role="Student" />
       <div className="dashboard-stats">
-        <StatCard label="CLB đang tham gia" value={myClubs.length} supportingText="Từ membership đã được duyệt" icon={<UsersRound size={20} />} />
-        <StatCard label="Yêu cầu đang chờ" value={pendingIds.size} supportingText="Trạng thái membership hiện tại" icon={<FileClock size={20} />} tone="warning" />
-        <StatCard label="CLB có thể khám phá" value={discoverClubs.length} supportingText="CLB hoạt động, chưa tham gia" icon={<Compass size={20} />} tone="neutral" />
+        <StatCard label="CLB đang tham gia" value={myClubs.length} supportingText="Số câu lạc bộ bạn đang tham gia" icon={<UsersRound size={20} />} />
+        <StatCard label="Yêu cầu đang chờ" value={pendingIds.size} supportingText="Đơn gia nhập đang đợi duyệt" icon={<FileClock size={20} />} tone="warning" />
+        <StatCard label="CLB có thể khám phá" value={discoverClubs.length} supportingText="Câu lạc bộ mới sẵn sàng tham gia" icon={<Compass size={20} />} tone="neutral" />
       </div>
 
       <div className="dashboard-columns">
         <DashboardSection
           title="Câu lạc bộ của tôi"
-          description="Các membership đã được hệ thống xác nhận."
+          description="Danh sách câu lạc bộ bạn đã gia nhập."
           action={{ label: 'Xem tất cả CLB', to: '/clubs' }}
           busy={clubsQuery.isLoading || membershipsQuery.isLoading}
         >
@@ -211,7 +211,7 @@ function ClubManagerDashboard() {
         <DashboardWelcome role="ClubManager" />
         <DashboardCard>
           <DashboardErrorState
-            message="Không thể xác định câu lạc bộ và capability của tài khoản."
+            message="Không thể xác định câu lạc bộ và quyền hạn của tài khoản."
             onRetry={() => {
               void clubsQuery.refetch();
               void membershipsQuery.refetch();
@@ -229,7 +229,7 @@ function ClubManagerDashboard() {
         <DashboardCard>
           <DashboardEmptyState
             title="Bạn chưa quản lý câu lạc bộ nào"
-            description="Dashboard chỉ hiển thị khi có membership Club Leader hoặc Treasurer đã được duyệt."
+            description="Dashboard quản lý chỉ hiển thị khi bạn có vai trò Chủ nhiệm hoặc Thủ quỹ đã được phê duyệt."
             action={{ label: 'Xem danh sách CLB', to: '/clubs' }}
           />
         </DashboardCard>
@@ -237,12 +237,23 @@ function ClubManagerDashboard() {
     );
   }
 
+  const roleBadgeNode = (
+    <div style={{ display: 'inline-flex', gap: '0.375rem', flexWrap: 'wrap' }}>
+      {selectedMemberships.map((membership) => (
+        <Badge key={membership.id} className="bg-indigo-100 text-indigo-700">
+          {ClubRoleLabel[membership.role] ?? String(membership.role)}
+        </Badge>
+      ))}
+    </div>
+  );
+
   return (
     <>
       <DashboardHeader
         eyebrow={getRoleLabel('ClubManager')}
+        badge={roleBadgeNode}
         title={managedClubs.find((club) => club.id === effectiveClubId)?.name ?? 'Dashboard câu lạc bộ'}
-        description="Dữ liệu và thao tác được giới hạn theo capability của membership hiện tại."
+        description="Tổng quan hoạt động, sự kiện và báo cáo của câu lạc bộ."
         actions={managedClubs.length > 1 ? (
           <label className="dashboard-selector">
             <span>Chọn câu lạc bộ</span>
@@ -253,20 +264,12 @@ function ClubManagerDashboard() {
         ) : undefined}
       />
 
-      <div className="dashboard-capabilities" aria-label="Quyền tại câu lạc bộ đang chọn">
-        {selectedMemberships.map((membership) => (
-          <Badge key={membership.id} className="bg-indigo-100 text-indigo-700">
-            {ClubRoleLabel[membership.role] ?? String(membership.role)}
-          </Badge>
-        ))}
-      </div>
-
       {canManageReports ? (
         <>
           <div className="dashboard-stats">
-            <StatCard label="Báo cáo" value={reports.length} supportingText="Tổng báo cáo của CLB đã chọn" icon={<ClipboardCheck size={20} />} />
-            <StatCard label="Báo cáo chờ duyệt" value={pendingReports.length} supportingText="Derived từ trạng thái báo cáo" icon={<FileClock size={20} />} tone="warning" />
-            <StatCard label="Sự kiện sắp tới" value={futureEvents.length} supportingText="Derived từ ngày và trạng thái sự kiện" icon={<CalendarDays size={20} />} tone="success" />
+            <StatCard label="Báo cáo" value={reports.length} supportingText="Tổng số báo cáo đã tạo" icon={<ClipboardCheck size={20} />} />
+            <StatCard label="Báo cáo chờ duyệt" value={pendingReports.length} supportingText="Đang chờ phòng CTSV xét duyệt" icon={<FileClock size={20} />} tone="warning" />
+            <StatCard label="Sự kiện sắp tới" value={futureEvents.length} supportingText="Sự kiện sẽ diễn ra trong học kỳ" icon={<CalendarDays size={20} />} tone="success" />
           </div>
           <div className="dashboard-columns">
             <ManagerEvents query={eventsQuery} events={futureEvents} />
@@ -275,11 +278,11 @@ function ClubManagerDashboard() {
         </>
       ) : (
         <DashboardCard>
-          <UnavailableMetric>Membership Treasurer không cấp quyền đọc báo cáo hoặc sự kiện. Dashboard không gửi các request đó.</UnavailableMetric>
+          <UnavailableMetric>Tài khoản của bạn thuộc vai trò Thủ quỹ với quyền hạn chuyên biệt về Quản lý Tài chính.</UnavailableMetric>
         </DashboardCard>
       )}
 
-      <DashboardSection title="Thao tác nhanh" description="Chỉ hiển thị route phù hợp capability hiện tại.">
+      <DashboardSection title="Thao tác nhanh" description="Các lối tắt quản lý dành cho Ban chủ nhiệm.">
         <div className="dashboard-actions">
           {canManageReports && <Link to="/reports"><ClipboardCheck size={19} />Quản lý báo cáo</Link>}
           {canManageReports && <Link to="/events"><CalendarDays size={19} />Quản lý sự kiện</Link>}
@@ -298,7 +301,7 @@ function ManagerEvents({
   events: ClubEvent[];
 }) {
   return (
-    <DashboardSection title="Sự kiện sắp tới" description="Tối đa năm sự kiện có ngày hợp lệ." action={{ label: 'Xem lịch', to: '/events' }} busy={query.isLoading}>
+    <DashboardSection title="Sự kiện sắp tới" description="Danh sách các sự kiện chuẩn bị diễn ra." action={{ label: 'Xem tất cả', to: '/events' }} busy={query.isLoading}>
       {query.isLoading ? <DashboardSkeleton cards={2} /> : query.isError ? (
         <DashboardErrorState message="Không thể tải sự kiện của CLB." onRetry={() => void query.refetch()} />
       ) : events.length === 0 ? (
@@ -326,7 +329,7 @@ function ManagerReports({
   reports: ActivityReport[];
 }) {
   return (
-    <DashboardSection title="Báo cáo gần đây" description="Tối đa năm báo cáo của CLB đã chọn." action={{ label: 'Xem báo cáo', to: '/reports' }} busy={query.isLoading}>
+    <DashboardSection title="Báo cáo gần đây" description="Danh sách các báo cáo của câu lạc bộ." action={{ label: 'Xem tất cả', to: '/reports' }} busy={query.isLoading}>
       {query.isLoading ? <DashboardSkeleton cards={2} /> : query.isError ? (
         <DashboardErrorState message="Không thể tải báo cáo của CLB." onRetry={() => void query.refetch()} />
       ) : reports.length === 0 ? (
@@ -382,13 +385,13 @@ function AdminDashboard() {
       ) : (
         <>
           <div className="dashboard-stats">
-            <StatCard label="Tổng số CLB" value={clubs.length} supportingText="Derived từ danh sách CLB" icon={<Building2 size={20} />} />
-            <StatCard label="CLB đang hoạt động" value={activeClubs} supportingText="Derived từ trạng thái Active" icon={<CheckCircle2 size={20} />} tone="success" />
-            <StatCard label="CLB chờ duyệt" value={pendingClubs} supportingText="Derived từ Pending Approval" icon={<FileClock size={20} />} tone="warning" />
+            <StatCard label="Tổng số CLB" value={clubs.length} supportingText="Tổng số câu lạc bộ toàn trường" icon={<Building2 size={20} />} />
+            <StatCard label="CLB đang hoạt động" value={activeClubs} supportingText="Câu lạc bộ đang hoạt động" icon={<CheckCircle2 size={20} />} tone="success" />
+            <StatCard label="CLB chờ duyệt" value={pendingClubs} supportingText="Câu lạc bộ mới đang chờ duyệt" icon={<FileClock size={20} />} tone="warning" />
           </div>
 
           <div className="dashboard-columns">
-            <DashboardSection title="Trạng thái câu lạc bộ" description="Phân bố derived từ trạng thái hiện tại của từng CLB.">
+            <DashboardSection title="Trạng thái câu lạc bộ" description="Phân bố theo trạng thái hiện tại của từng CLB.">
               {statusData.length === 0 ? (
                 <DashboardEmptyState title="Chưa có dữ liệu CLB" description="Không có trạng thái để trực quan hóa." />
               ) : (
@@ -413,9 +416,9 @@ function AdminDashboard() {
               )}
             </DashboardSection>
 
-            <DashboardSection title="Báo cáo chờ duyệt" description="Tổng hợp theo từng CLB; một lỗi không làm mất các kết quả đã tải." action={{ label: 'Mở trang duyệt', to: '/admin/reports' }} busy={reportsLoading}>
+            <DashboardSection title="Báo cáo chờ duyệt" description="Danh sách các báo cáo đang chờ phê duyệt." action={{ label: 'Mở trang duyệt', to: '/admin/reports' }} busy={reportsLoading}>
               {reportsLoading && pendingReports.length === 0 ? <DashboardSkeleton cards={2} /> : pendingReports.length === 0 && !reportsFailed ? (
-                <DashboardEmptyState title="Không có báo cáo chờ duyệt" description="Không có báo cáo Pending Approval trong dữ liệu đã tải." />
+                <DashboardEmptyState title="Không có báo cáo chờ duyệt" description="Không có báo cáo chưa duyệt ở thời điểm này." />
               ) : (
                 <div className="dashboard-data-list">
                   {pendingReports.slice(0, 5).map((report) => (
@@ -429,7 +432,7 @@ function AdminDashboard() {
               )}
               {reportsFailed && (
                 <div className="mt-4">
-                  <UnavailableMetric>Một số CLB không trả được dữ liệu báo cáo; tổng hiện tại chỉ phản ánh các request thành công.</UnavailableMetric>
+                  <UnavailableMetric>Một số CLB không trả được dữ liệu báo cáo; kết quả hiện tại chỉ phản ánh các request thành công.</UnavailableMetric>
                 </div>
               )}
             </DashboardSection>
@@ -444,12 +447,23 @@ export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
   const scopeRef = useGsapReveal<HTMLDivElement>({ animationKey: `dashboard-${user?.role ?? 'anonymous'}` });
 
+  const membershipsQuery = useQuery({
+    queryKey: ['my-memberships', user?.id],
+    queryFn: clubApi.getMyMemberships,
+    enabled: Boolean(user?.id && user?.role !== 'StudentAffairsAdmin'),
+  });
+
+  const memberships = membershipsQuery.data?.data.data ?? [];
+  const isClubManager =
+    user?.role === 'ClubManager' ||
+    memberships.some((m) => isLeader(m) || isTreasurer(m));
+
   return (
     <DashboardShell scopeRef={scopeRef}>
       <div data-gsap-item>
         {user?.role === 'StudentAffairsAdmin' ? (
           <AdminDashboard />
-        ) : user?.role === 'ClubManager' ? (
+        ) : isClubManager ? (
           <ClubManagerDashboard />
         ) : (
           <StudentDashboard />

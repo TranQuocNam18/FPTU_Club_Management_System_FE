@@ -5,6 +5,7 @@ import { Banknote, CheckCircle2, Edit2, Eye, FilterX, Plus, ReceiptText, Search,
 import toast from 'react-hot-toast';
 import { financeApi, type BudgetProposal, type ProposalInput } from '../../api/finance.api';
 import { clubApi } from '../../api/club.api';
+import { eventApi } from '../../api/event.api';
 import {
   FinanceEmptyState,
   FinanceErrorState,
@@ -21,8 +22,8 @@ import { Button } from '../../components/ui/Button';
 import { Modal } from '../../components/ui/Modal';
 import { useGsapReveal } from '../../hooks/useGsapReveal';
 import { useAuthStore } from '../../stores/authStore';
-import type { Club } from '../../types';
-import { formatCurrency, formatDateTime, getApiError } from '../../utils';
+import type { Club, ClubEvent } from '../../types';
+import { formatCurrency, formatDate, formatDateTime, getApiError } from '../../utils';
 
 type FinanceTab = 'proposals' | 'balance' | 'transactions';
 type ReviewMode = 'approve' | 'partial' | 'reject';
@@ -53,12 +54,30 @@ export default function FinancePage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [createOpen, setCreateOpen] = useState(false);
+  const [createTxOpen, setCreateTxOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<BudgetProposal | null>(null);
   const [detailTarget, setDetailTarget] = useState<BudgetProposal | null>(null);
   const [reviewTarget, setReviewTarget] = useState<BudgetProposal | null>(null);
   const [reviewMode, setReviewMode] = useState<ReviewMode>('approve');
   const [settleTarget, setSettleTarget] = useState<BudgetProposal | null>(null);
   const scopeRef = useGsapReveal<HTMLDivElement>({ animationKey: `finance-${user?.role ?? 'anonymous'}` });
+
+  const createTxMutation = useMutation({
+    mutationFn: (values: { amount: string; type: string; description: string }) =>
+      financeApi.createTransaction({
+        clubId: effectiveClubId,
+        amount: Number(values.amount),
+        type: values.type,
+        description: values.description,
+      }),
+    onSuccess: () => {
+      toast.success('Đã cấp kinh phí / tạo giao dịch thành công!');
+      setCreateTxOpen(false);
+      void queryClient.invalidateQueries({ queryKey: ['club-balance', effectiveClubId] });
+      void queryClient.invalidateQueries({ queryKey: ['club-transactions', effectiveClubId] });
+    },
+    onError: (error) => toast.error(getApiError(error, 'Không thể tạo giao dịch.')),
+  });
 
   const clubsQuery = useQuery({ queryKey: ['clubs'], queryFn: clubApi.getAll, enabled: Boolean(user) });
   const membershipsQuery = useQuery({
@@ -73,15 +92,20 @@ export default function FinancePage() {
       .filter((membership) => Number(membership.role) === 3 && Number(membership.status) === 1)
       .map((membership) => membership.clubId),
   ), [memberships]);
+  const managerClubIds = useMemo(() => new Set(
+    memberships
+      .filter((membership) => (Number(membership.role) === 2 || Number(membership.role) === 3) && Number(membership.status) === 1)
+      .map((membership) => membership.clubId),
+  ), [memberships]);
   const availableClubs = useMemo(
-    () => isAdmin ? clubs : clubs.filter((club) => treasurerClubIds.has(club.id)),
-    [clubs, isAdmin, treasurerClubIds],
+    () => isAdmin ? clubs : clubs.filter((club) => managerClubIds.has(club.id)),
+    [clubs, isAdmin, managerClubIds],
   );
   const effectiveClubId = availableClubs.some((club) => club.id === selectedClubId)
     ? selectedClubId
     : availableClubs[0]?.id ?? '';
   const selectedClub = availableClubs.find((club) => club.id === effectiveClubId);
-  const hasTreasurerCapability = !isAdmin && treasurerClubIds.has(effectiveClubId);
+  const hasTreasurerCapability = !isAdmin && managerClubIds.has(effectiveClubId);
 
   const proposalsQuery = useQuery({
     queryKey: ['finance-proposals', effectiveClubId],
@@ -204,7 +228,10 @@ export default function FinancePage() {
     <div ref={scopeRef} className="finance-page">
       <header className="finance-header" data-gsap-item>
         <div><p className="finance-eyebrow">{isAdmin ? 'Financial governance' : 'Club treasury operations'}</p><h1>Vận hành tài chính</h1><p>Kiểm tra đề xuất, phê duyệt, số dư, giao dịch và quyết toán từ dữ liệu Gateway.</p></div>
-        {hasTreasurerCapability && <Button onClick={openCreate} icon={<Plus size={17} aria-hidden="true" />}>Tạo đề xuất</Button>}
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          {hasTreasurerCapability && <Button onClick={openCreate} icon={<Plus size={17} aria-hidden="true" />}>Tạo đề xuất</Button>}
+          {isAdmin && <Button variant="outline" onClick={() => setCreateTxOpen(true)} icon={<Plus size={17} aria-hidden="true" />}>Cấp kinh phí</Button>}
+        </div>
       </header>
 
       {clubLoading ? <FinanceSkeleton /> : clubError ? (
@@ -268,7 +295,10 @@ export default function FinancePage() {
         {detailQuery.isLoading ? <FinanceSkeleton count={1} /> : detailQuery.isError ? <FinanceErrorState message="Không thể tải proposal detail." onRetry={() => void detailQuery.refetch()} /> : detailTarget && <ProposalDetail proposal={detailQuery.data?.data.data ?? detailTarget} club={selectedClub} />}
       </Modal>
       <Modal isOpen={createOpen || Boolean(editTarget)} onClose={() => { setCreateOpen(false); setEditTarget(null); }} title={editTarget ? 'Chỉnh sửa bản nháp' : 'Tạo đề xuất ngân sách'} size="lg">
-        <ProposalForm form={proposalForm} pending={saveProposalMutation.isPending} onCancel={() => { setCreateOpen(false); setEditTarget(null); }} onSubmit={(values) => saveProposalMutation.mutate(values)} />
+        <ProposalForm form={proposalForm} clubId={effectiveClubId} pending={saveProposalMutation.isPending} onCancel={() => { setCreateOpen(false); setEditTarget(null); }} onSubmit={(values) => saveProposalMutation.mutate(values)} />
+      </Modal>
+      <Modal isOpen={createTxOpen} onClose={() => setCreateTxOpen(false)} title="Cấp kinh phí / Tạo giao dịch trực tiếp" size="lg">
+        <TransactionForm pending={createTxMutation.isPending} onCancel={() => setCreateTxOpen(false)} onSubmit={(values) => createTxMutation.mutate(values)} />
       </Modal>
       <Modal isOpen={Boolean(reviewTarget)} onClose={() => setReviewTarget(null)} title="Review đề xuất ngân sách" size="lg">
         {reviewTarget && <div className="finance-review"><ProposalDetail proposal={detailQuery.data?.data.data ?? reviewTarget} club={selectedClub} /><ReviewForm proposal={reviewTarget} form={reviewForm} mode={reviewMode} onModeChange={(mode) => { setReviewMode(mode); reviewForm.clearErrors(); }} pending={reviewMutation.isPending} onCancel={() => setReviewTarget(null)} onSubmit={(values) => reviewMutation.mutate(values)} /></div>}
@@ -291,14 +321,98 @@ function ProposalDetail({ proposal, club }: { proposal: BudgetProposal; club?: C
   </div>;
 }
 
-function ProposalForm({ form, pending, onCancel, onSubmit }: { form: ReturnType<typeof useForm<ProposalValues>>; pending: boolean; onCancel: () => void; onSubmit: (values: ProposalValues) => void }) {
-  const { register, handleSubmit, formState: { errors } } = form;
-  return <form className="finance-form" onSubmit={handleSubmit(onSubmit)}>
-    <label>Tên sự kiện<input {...register('eventName', { required: 'Vui lòng nhập tên sự kiện.', minLength: { value: 3, message: 'Tối thiểu 3 ký tự.' }, maxLength: { value: 200, message: 'Tối đa 200 ký tự.' } })} />{errors.eventName && <span role="alert">{errors.eventName.message}</span>}</label>
-    <label>Số tiền yêu cầu (VND)<input type="number" inputMode="decimal" step="0.01" {...register('requestedAmount', { required: 'Vui lòng nhập số tiền.', validate: (value) => Number(value) > 0 || 'Số tiền phải lớn hơn 0.' })} />{errors.requestedAmount && <span role="alert">{errors.requestedAmount.message}</span>}</label>
-    <label>Chi tiết ngân sách<textarea rows={8} maxLength={5000} {...register('budgetDetailsJson')} /><small>Contract hiện tại nhận chuỗi budgetDetailsJson; frontend không tự tạo line item schema.</small></label>
-    <div className="finance-form-actions"><Button type="button" variant="outline" onClick={onCancel}>Hủy</Button><Button type="submit" loading={pending}>Lưu Draft</Button></div>
-  </form>;
+function ProposalForm({
+  form,
+  clubId,
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  form: ReturnType<typeof useForm<ProposalValues>>;
+  clubId: string;
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (values: ProposalValues) => void;
+}) {
+  const { register, handleSubmit, formState: { errors }, setValue } = form;
+
+  const eventsQuery = useQuery({
+    queryKey: ['club-events', clubId],
+    queryFn: () => eventApi.getByClub(clubId),
+    enabled: Boolean(clubId),
+  });
+  const events = (eventsQuery.data?.data.data ?? []) as ClubEvent[];
+
+  return (
+    <form className="finance-form" onSubmit={handleSubmit(onSubmit)}>
+      {events.length > 0 && (
+        <label>
+          <span>Chọn sự kiện của CLB</span>
+          <select
+            onChange={(e) => {
+              const selected = events.find((ev) => ev.id === e.target.value);
+              if (selected) {
+                setValue('eventName', selected.title, { shouldValidate: true });
+              }
+            }}
+          >
+            <option value="">-- Chọn sự kiện có sẵn (Hoặc tự nhập bên dưới) --</option>
+            {events.map((ev) => (
+              <option key={ev.id} value={ev.id}>
+                {ev.title} ({formatDate(ev.expectedDate)})
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+
+      <label>
+        <span>Tên sự kiện / Hoạt động</span>
+        <input
+          placeholder="Nhập hoặc chọn tên sự kiện ở trên..."
+          {...register('eventName', {
+            required: 'Vui lòng nhập tên sự kiện.',
+            minLength: { value: 3, message: 'Tối thiểu 3 ký tự.' },
+            maxLength: { value: 200, message: 'Tối đa 200 ký tự.' },
+          })}
+        />
+        {errors.eventName && <span role="alert">{errors.eventName.message}</span>}
+      </label>
+
+      <label>
+        <span>Số tiền yêu cầu (VND)</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          step="0.01"
+          placeholder="Ví dụ: 3000000"
+          {...register('requestedAmount', {
+            required: 'Vui lòng nhập số tiền.',
+            validate: (value) => Number(value) > 0 || 'Số tiền phải lớn hơn 0.',
+          })}
+        />
+        {errors.requestedAmount && <span role="alert">{errors.requestedAmount.message}</span>}
+      </label>
+
+      <label>
+        <span>Chi tiết ngân sách & Dự toán thu chi</span>
+        <textarea
+          rows={6}
+          maxLength={5000}
+          placeholder={`Chi tiết các mục cần cấp ngân sách, ví dụ:\n- Thuê hội trường & Âm thanh ánh sáng: 2,000,000 VND\n- In ấn Banner & Backdrop: 500,000 VND\n- Teabreak & Nước uống đại biểu: 500,000 VND`}
+          {...register('budgetDetailsJson')}
+        />
+        <small style={{ color: 'var(--color-text-subtle)' }}>
+          Liệt kê chi tiết các khoản dự trù kinh phí để Phòng CTSV xét duyệt.
+        </small>
+      </label>
+
+      <div className="finance-form-actions">
+        <Button type="button" variant="outline" onClick={onCancel}>Hủy</Button>
+        <Button type="submit" loading={pending}>Lưu Draft</Button>
+      </div>
+    </form>
+  );
 }
 
 function ReviewForm({ proposal, form, mode, onModeChange, pending, onCancel, onSubmit }: { proposal: BudgetProposal; form: ReturnType<typeof useForm<ReviewValues>>; mode: ReviewMode; onModeChange: (mode: ReviewMode) => void; pending: boolean; onCancel: () => void; onSubmit: (values: ReviewValues) => void }) {
@@ -315,10 +429,62 @@ function SettlementForm({ proposal, form, pending, onCancel, onSubmit }: { propo
   const { register, handleSubmit, formState: { errors } } = form;
   const ceiling = proposal.approvedAmount ?? proposal.requestedAmount;
   return <form className="finance-form" onSubmit={handleSubmit(onSubmit)}>
-    <FinanceUnavailableState title="Receipt sử dụng URL metadata" description="Backend không có upload adapter; form không hiển thị file picker hoặc tiến trình upload." />
-    <label>Chi phí thực tế<input type="number" inputMode="decimal" step="0.01" {...register('actualAmount', { required: 'Vui lòng nhập chi phí thực tế.', validate: (value) => (Number(value) > 0 && Number(value) <= ceiling) || `Chi phí phải lớn hơn 0 và không vượt ${formatCurrency(ceiling)}.` })} />{errors.actualAmount && <span role="alert">{errors.actualAmount.message}</span>}</label>
-    <label>Receipt URL<input type="url" {...register('receiptUrl', { required: 'Receipt URL là bắt buộc.', pattern: { value: /^https?:\/\/\S+$/i, message: 'Vui lòng nhập URL http(s) hợp lệ.' } })} />{errors.receiptUrl && <span role="alert">{errors.receiptUrl.message}</span>}</label>
-    <label>Mô tả<textarea rows={4} maxLength={500} {...register('description')} /></label>
-    <div className="finance-form-actions"><Button type="button" variant="outline" onClick={onCancel}>Hủy</Button><Button type="submit" loading={pending}>Quyết toán</Button></div>
+    <label>Chi phí thực tế (VND)<input type="number" inputMode="decimal" step="0.01" placeholder="Số tiền chi thực tế..." {...register('actualAmount', { required: 'Vui lòng nhập chi phí thực tế.', validate: (value) => (Number(value) > 0 && Number(value) <= ceiling) || `Chi phí phải lớn hơn 0 và không vượt ${formatCurrency(ceiling)}.` })} />{errors.actualAmount && <span role="alert">{errors.actualAmount.message}</span>}</label>
+    <label>Đường dẫn hóa đơn / Minh chứng (Receipt URL)<input type="url" placeholder="https://drive.google.com/..." {...register('receiptUrl', { required: 'Receipt URL là bắt buộc.', pattern: { value: /^https?:\/\/\S+$/i, message: 'Vui lòng nhập URL http(s) hợp lệ.' } })} />{errors.receiptUrl && <span role="alert">{errors.receiptUrl.message}</span>}<small style={{ color: 'var(--color-text-subtle)' }}>Đính kèm đường dẫn ảnh hóa đơn, chứng từ hoặc file Drive nghiệm thu.</small></label>
+    <label>Ghi chú quyết toán<textarea rows={4} maxLength={500} placeholder="Ghi chú chi tiết về khoản chi..." {...register('description')} /></label>
+    <div className="finance-form-actions"><Button type="button" variant="outline" onClick={onCancel}>Hủy</Button><Button type="submit" loading={pending}>Xác nhận quyết toán</Button></div>
   </form>;
+}
+
+function TransactionForm({
+  pending,
+  onCancel,
+  onSubmit,
+}: {
+  pending: boolean;
+  onCancel: () => void;
+  onSubmit: (values: { amount: string; type: string; description: string }) => void;
+}) {
+  const form = useForm<{ amount: string; type: string; description: string }>({
+    defaultValues: { type: 'Disbursement', amount: '', description: '' },
+  });
+  const { register, handleSubmit, formState: { errors } } = form;
+
+  return (
+    <form className="finance-form" onSubmit={handleSubmit(onSubmit)}>
+      <label>
+        <span>Loại giao dịch</span>
+        <select {...register('type')}>
+          <option value="Disbursement">Cấp kinh phí / Phân bổ (Disbursement)</option>
+          <option value="Allocation">Phân bổ quỹ (Allocation)</option>
+        </select>
+      </label>
+      <label>
+        <span>Số tiền (VND)</span>
+        <input
+          type="number"
+          step="0.01"
+          placeholder="Ví dụ: 10000000"
+          {...register('amount', {
+            required: 'Vui lòng nhập số tiền.',
+            validate: (v) => Number(v) > 0 || 'Số tiền phải lớn hơn 0.',
+          })}
+        />
+        {errors.amount && <span role="alert">{errors.amount.message}</span>}
+      </label>
+      <label>
+        <span>Nội dung cấp kinh phí / Giao dịch</span>
+        <textarea
+          rows={3}
+          placeholder="Nhập lý do cấp kinh phí (Ví dụ: Cấp ngân sách hoạt động học kỳ...)"
+          {...register('description', { required: 'Vui lòng nhập nội dung.' })}
+        />
+        {errors.description && <span role="alert">{errors.description.message}</span>}
+      </label>
+      <div className="finance-form-actions">
+        <Button type="button" variant="outline" onClick={onCancel}>Hủy</Button>
+        <Button type="submit" loading={pending}>Xác nhận cấp vốn</Button>
+      </div>
+    </form>
+  );
 }

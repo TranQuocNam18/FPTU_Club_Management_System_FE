@@ -120,7 +120,7 @@ export default function AdminUsersPage() {
               <UserCard key={user.id}>
                 <div className="admin-card-top">
                   <UserIdentity user={user} />
-                  {self && <span className="admin-self-label">Bạn</span>}
+                  {self && <span className="admin-self-label">Bạn (You)</span>}
                 </div>
                 <div className="admin-card-meta">
                   <UserRoleBadge role={user.role} />

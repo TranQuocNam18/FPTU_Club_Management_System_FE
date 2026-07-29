@@ -130,21 +130,21 @@ export default function EventsPage() {
     onError: (error) => toast.error(getApiError(error, 'Không thể lưu sự kiện.')),
   });
 
-  const canManage = (event: ClubEvent) => isAdmin || manageableClubIds.has(event.clubId);
+  const isClubLeader = (event: ClubEvent) => manageableClubIds.has(event.clubId);
   const actionList = (event: ClubEvent): Action[] => {
     const status = canonicalEventStatus(event);
     const actions: Action[] = [];
-    if (canManage(event) && ['Draft', 'Rejected'].includes(status)) actions.push('submit');
+    if (isClubLeader(event) && ['Draft', 'Rejected'].includes(status)) actions.push('submit');
     if (isAdmin && status === 'PendingApproval') actions.push('approve', 'reject');
-    if (isAdmin && status === 'Approved') actions.push('complete');
-    if (canManage(event) && ['Draft', 'Rejected', 'PendingApproval', 'Approved'].includes(status)) actions.push('cancel');
+    if ((isClubLeader(event) || isAdmin) && status === 'Approved') actions.push('complete');
+    if ((isClubLeader(event) && ['Draft', 'PendingApproval'].includes(status)) || (isAdmin && ['PendingApproval', 'Approved'].includes(status))) actions.push('cancel');
     return actions;
   };
 
   return (
     <div ref={scope} className="events-page">
       <header className="events-header" data-gsap-item>
-        <div><p className="events-eyebrow">Academic activities</p><h1>Lịch hoạt động</h1><p>Theo dõi, chuẩn bị và duyệt sự kiện theo đúng workflow.</p></div>
+        <div><p className="events-eyebrow">Academic activities</p><h1>Quản lý Sự kiện & Hoạt động</h1><p>Theo dõi, chuẩn bị, tạo mới và phê duyệt sự kiện theo đúng workflow.</p></div>
         {(isAdmin || manageableClubs.length > 0) && <Button icon={<Plus size={17} />} onClick={() => { setSelectedId(null); setFormMode('create'); }}>Tạo sự kiện</Button>}
       </header>
 
@@ -174,7 +174,7 @@ export default function EventsPage() {
               <div><dt><MapPin size={16} />Địa điểm</dt><dd>{selectedEvent.location || 'Chưa có địa điểm'}</dd></div>
             </dl>
             <div className="event-detail__actions">
-              {canManage(selectedEvent) && ['Draft', 'Rejected'].includes(canonicalEventStatus(selectedEvent)) && <Button variant="outline" icon={<Edit3 size={16} />} onClick={() => setFormMode('edit')}>Chỉnh sửa</Button>}
+              {isClubLeader(selectedEvent) && ['Draft', 'Rejected'].includes(canonicalEventStatus(selectedEvent)) && <Button variant="outline" icon={<Edit3 size={16} />} onClick={() => setFormMode('edit')}>Chỉnh sửa</Button>}
               {actionList(selectedEvent).map((action) => <Button key={action} variant={action === 'reject' || action === 'cancel' ? 'danger' : 'primary'} icon={action === 'submit' ? <Send size={16} /> : action === 'approve' || action === 'complete' ? <CheckCircle2 size={16} /> : <XCircle size={16} />} onClick={() => setPendingAction({ event: selectedEvent, action })}>{actionLabels[action]}</Button>)}
             </div>
           </div>

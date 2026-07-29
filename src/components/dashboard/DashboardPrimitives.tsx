@@ -23,16 +23,21 @@ export function DashboardHeader({
   eyebrow,
   description,
   actions,
+  badge,
 }: {
   title: string;
   eyebrow: string;
   description: string;
   actions?: ReactNode;
+  badge?: ReactNode;
 }) {
   return (
     <header className="dashboard-header" data-dashboard-header>
       <div className="min-w-0">
-        <p className="dashboard-eyebrow">{eyebrow}</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', flexWrap: 'wrap' }}>
+          <p className="dashboard-eyebrow" style={{ margin: 0 }}>{eyebrow}</p>
+          {badge}
+        </div>
         <h1>{title}</h1>
         <p>{description}</p>
       </div>

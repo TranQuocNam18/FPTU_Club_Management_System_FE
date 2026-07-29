@@ -50,8 +50,8 @@ const navigationGroups: NavGroup[] = [
     label: 'Quản lý câu lạc bộ',
     items: [
       { label: 'Câu lạc bộ', to: '/clubs', icon: <Building2 size={19} /> },
-      { label: 'Đăng ký thành lập CLB', to: '/club-applications', icon: <ClipboardList size={19} />, roles: ['Student'] },
-      { label: 'Lịch hoạt động', to: '/events', icon: <Calendar size={19} /> },
+      { label: 'Đăng ký thành lập CLB', to: '/club-applications', icon: <ClipboardList size={19} /> },
+      { label: 'Sự kiện & Hoạt động', to: '/events', icon: <Calendar size={19} /> },
       { label: 'KPI & Semester', to: '/kpi', icon: <Trophy size={19} /> },
     ],
   },
@@ -80,6 +80,7 @@ const adminGroup: NavGroup = {
     { label: 'Quản lý người dùng', to: '/admin/users', icon: <Users size={19} /> },
     { label: 'Quản lý CLB', to: '/admin/clubs', icon: <Building2 size={19} /> },
     { label: 'Duyệt đơn thành lập CLB', to: '/admin/club-applications', icon: <ShieldCheck size={19} /> },
+    { label: 'Duyệt sự kiện', to: '/events', icon: <Calendar size={19} /> },
     { label: 'Duyệt báo cáo', to: '/admin/reports', icon: <ClipboardList size={19} /> },
   ],
 };
@@ -116,6 +117,7 @@ export function Sidebar({
   const hasTreasurerRole = memberships.some(
     (membership) => Number(membership.role) === 3 && Number(membership.status) === 1,
   );
+  const hasManagerRole = hasLeaderRole || hasTreasurerRole;
 
   const visibleGroups = [
     ...navigationGroups.map((group) => ({
@@ -123,9 +125,7 @@ export function Sidebar({
       items: group.items.filter(
         (item) =>
           (!item.roles || !user || item.roles.includes(user.role)) &&
-          (!item.capability ||
-            isAdmin ||
-            (item.capability === 'leader' ? hasLeaderRole : hasTreasurerRole)),
+          (!item.capability || isAdmin || hasManagerRole),
       ),
     })),
     ...(isAdmin ? [adminGroup] : []),
